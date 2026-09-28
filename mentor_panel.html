@@ -19,6 +19,9 @@
   <nav class="nav">
     <a href="/" class="active"><i class="ti ti-layout-dashboard"></i>Панель ментора</a>
     <a href="/tm"><i class="ti ti-brain"></i>Teachable Machine</a>
+    <a href="/follow"><i class="ti ti-focus-2"></i>Следуй за мной</a>
+    <a href="/sound"><i class="ti ti-microphone"></i>Звуковые команды</a>
+    <a href="/chat"><i class="ti ti-message-chatbot"></i>Спроси Роберта</a>
   </nav>
   <span class="status" id="status"><span class="dot"></span>Не подключён</span>
   <button id="connectBtn"><i class="ti ti-plug-connected"></i>Подключить</button>
@@ -97,7 +100,8 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-const COLORS = ["#E5484D", "#30A46C", "#246FFF", "#F5C400", "#8E4EC6", "#12A594", "#E9EEF5"];
+// Реальные цвета глаз робота (проверено калибровкой)
+const COLORS = ["#2547C9", "#3FB3E8", "#30A46C", "#F5C400", "#E5484D", "#8E4EC6", "#E9EEF5"];
 const MINE = "Мои заготовки";
 let groups = {}, presets = [], activeTab = MINE, eyeColor = 2;
 

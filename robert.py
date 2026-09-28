@@ -7,8 +7,9 @@ from tkinter import ttk
 
 import robot_ble as rb
 
-COLORS = [(1, "#e74c3c"), (2, "#2ecc71"), (3, "#3498db"), (4, "#f1c40f"),
-          (5, "#9b59b6"), (6, "#1abc9c"), (7, "#ecf0f1")]
+# Реальные цвета глаз робота (проверено калибровкой)
+COLORS = [(1, "#2c46c8"), (2, "#3fb3e8"), (3, "#2ecc71"), (4, "#f1c40f"),
+          (5, "#e74c3c"), (6, "#9b59b6"), (7, "#ecf0f1")]
 MOVE_KINDS = {
     "Комбинация (1–93)": rb.COMBO_RANGE,
     "Руки (100–110)": rb.HAND_RANGE,

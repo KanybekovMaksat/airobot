@@ -31,7 +31,7 @@ MODEL_PATH = HERE / "models" / "gesture_recognizer.task"
 ROCK, SCISSORS, PAPER = "камень", "ножницы", "бумага"
 BEATS = {ROCK: SCISSORS, SCISSORS: PAPER, PAPER: ROCK}  # кто кого побеждает
 COUNTER = {loser: winner for winner, loser in BEATS.items()}  # чем побить ход
-EYE_COLOR = {ROCK: 1, SCISSORS: 3, PAPER: 2}
+EYE_COLOR = {ROCK: 5, SCISSORS: 1, PAPER: 3}  # красный, синий, зелёный
 
 
 # ---------- 1. Как узнать ход игрока по точкам руки ----------

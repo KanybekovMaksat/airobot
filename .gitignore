@@ -4,5 +4,7 @@ __pycache__/
 tools/
 reactions*.txt
 mentor_presets.json
+claude_key.txt
+gemini_key.txt
 *.zip
 .DS_Store

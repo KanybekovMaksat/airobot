@@ -36,7 +36,7 @@
 
 | Windows | Mac | Что делает |
 |---|---|---|
-| `mentor_panel.bat` | `mentor_panel.command` | Панель ментора: текст голосом робота, фразы, движения, чек-лист урока, Teachable Machine — http://localhost:8000 |
+| `mentor_panel.bat` | `mentor_panel.command` | Панель ментора: текст голосом робота, фразы, движения, чек-лист урока, Teachable Machine, «Следуй за мной» (робот поворачивается за лицом, ладонью или своим объектом из TM), «Звуковые команды» (аудио-модель TM: свои слова, хлопки, свист), «Спроси Роберта» (ответы нейросети голосом робота; нужен бесплатный ключ Gemini с aistudio.google.com/apikey в файле `gemini_key.txt`, либо ключ Anthropic в `claude_key.txt`) — http://localhost:8000 |
 | `start.bat` | `start.command` | Пульт управления: ходьба, танцы, цвет глаз |
 | `voice.bat` | `voice.command` | Голосовое управление: «вперёд», «танцуй», «привет», «стоп» |
 | `gestures.bat` | `gestures.command` | Управление жестами через камеру (MediaPipe) |

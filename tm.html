@@ -19,6 +19,9 @@
   <nav class="nav">
     <a href="/"><i class="ti ti-layout-dashboard"></i>Панель ментора</a>
     <a href="/tm" class="active"><i class="ti ti-brain"></i>Teachable Machine</a>
+    <a href="/follow"><i class="ti ti-focus-2"></i>Следуй за мной</a>
+    <a href="/sound"><i class="ti ti-microphone"></i>Звуковые команды</a>
+    <a href="/chat"><i class="ti ti-message-chatbot"></i>Спроси Роберта</a>
   </nav>
   <span class="status" id="robotStatus"><span class="dot"></span>…</span>
 </header>
@@ -73,8 +76,8 @@ const $ = (id) => document.getElementById(id);
 const ACTIONS = [
   ["none", "Ничего не делать"], ["say", "Сказать текст"], ["hands", "Движение руками"], ["legs", "Движение ногами"],
   ["combo", "Комбо-движение"], ["forward", "Идти вперёд (пока класс)"], ["backward", "Идти назад (пока класс)"],
-  ["stop", "Стоп"], ["eyes1", "Цвет глаз 1"], ["eyes2", "Цвет глаз 2"], ["eyes3", "Цвет глаз 3"],
-  ["eyes4", "Цвет глаз 4"], ["eyes5", "Цвет глаз 5"], ["eyes6", "Цвет глаз 6"], ["eyes7", "Цвет глаз 7"],
+  ["stop", "Стоп"], ["eyes1", "Глаза: тёмно-синие"], ["eyes2", "Глаза: голубые"], ["eyes3", "Глаза: зелёные"],
+  ["eyes4", "Глаза: жёлтые"], ["eyes5", "Глаза: красные"], ["eyes6", "Глаза: фиолетовые"], ["eyes7", "Глаза: белые"],
 ];
 const WALK = new Set(["forward", "backward"]);
 let model, modelKind = "image", webcam, view, lastPose = null, running = false, labels = [], mapping = {};

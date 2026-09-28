@@ -18,8 +18,9 @@ import time
 import robot_ble as rb
 from platform_compat import Speaker
 
-# Номер цвета → название. Уточнить калибровкой: python robert_sdk.py colors
-COLOR_NAMES = {}
+# Номер цвета → название (проверено калибровкой: python robert_sdk.py colors)
+COLOR_NAMES = {1: "тёмно-синий", 2: "голубой", 3: "зелёный", 4: "жёлтый",
+               5: "красный", 6: "фиолетовый", 7: "белый"}
 
 
 def pronounce(text):

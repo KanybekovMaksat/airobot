@@ -5,7 +5,9 @@
 """
 
 import json
+import os
 import queue
+import re
 import socket
 import sys
 import threading
@@ -96,6 +98,151 @@ def save_presets(items):
     PRESETS_PATH.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+# ---------- ИИ-ответы: страница «Спроси Роберта» ----------
+# Ключ кладут одной строкой в файл рядом с этой программой:
+#   gemini_key.txt — бесплатный ключ Google Gemini (получить: aistudio.google.com/apikey)
+#   claude_key.txt — ключ Anthropic Claude (console.anthropic.com)
+# Если есть оба файла, используется Gemini.
+# Алиасы «всегда актуальная модель»; если первая перегружена (503) — пробуем запасную
+GEMINI_MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest"]
+CLAUDE_MODEL = "claude-opus-5"
+AI_SYSTEM = (
+    "Ты — Роберт, дружелюбный танцующий робот из IT-школы Codify. "
+    "Ты разговариваешь с детьми 9–14 лет на уроке по искусственному интеллекту. "
+    "Твой ответ произносится вслух синтезом речи, поэтому: отвечай по-русски, коротко "
+    "(1–3 предложения), без списков, без markdown, без эмодзи и без английских слов, "
+    "которые сложно произнести. Объясняй просто и с теплотой, можно с лёгким юмором. "
+    "Если вопрос не по теме урока — всё равно ответь коротко и по-доброму."
+)
+def _read_key(env_name, filename):
+    key = os.environ.get(env_name, "").strip()
+    path = HERE / filename
+    if not key and path.exists():
+        key = path.read_text(encoding="utf-8").strip()
+    return key
+
+
+def ai_provider():
+    """Какая нейросеть настроена: ('gemini'|'claude', ключ) или ('', '')."""
+    key = _read_key("GEMINI_API_KEY", "gemini_key.txt")
+    if key:
+        return "gemini", key
+    key = _read_key("ANTHROPIC_API_KEY", "claude_key.txt")
+    if key:
+        return "claude", key
+    return "", ""
+
+
+def ask_ai(question, personality="", history=None, key=""):
+    """Спросить нейросеть от лица Роберта. history — список {role, content} с прошлыми репликами.
+
+    key — ключ, который ученик вставил на странице; если пусто, берём ключ сервера
+    (gemini_key.txt / claude_key.txt). Провайдер узнаётся по виду ключа: AIza… — Gemini.
+    """
+    key = (key or "").strip().strip('"\'' + "«»")
+    if key:
+        # Ученики иногда копируют ключ вместе с лишним текстом — вытаскиваем сам ключ.
+        # У Gemini два формата ключей: старый «AIza…» и новый «AQ.…»
+        gemini = re.search(r"AIza[0-9A-Za-z_\-]{10,}|AQ\.[0-9A-Za-z_\-]{20,}", key)
+        claude = re.search(r"sk-ant-[0-9A-Za-z_\-]{10,}", key)
+        if gemini:
+            provider, key = "gemini", gemini.group(0)
+        elif claude:
+            provider, key = "claude", claude.group(0)
+        else:
+            raise RuntimeError("это не похоже на ключ: ключ Gemini начинается с «AIza…» или «AQ.…» — "
+                               "скопируй его целиком на aistudio.google.com/apikey")
+    else:
+        provider, key = ai_provider()
+    if not provider:
+        raise RuntimeError("нет API-ключа: вставьте свой ключ в поле «Ключ нейросети» на странице "
+                           "(бесплатно на aistudio.google.com/apikey) или положите его "
+                           "в файл gemini_key.txt рядом с mentor_panel.py")
+    system = AI_SYSTEM
+    if personality.strip():
+        system += "\n\nСегодня у тебя особый характер, играй эту роль:\n" + personality.strip()
+    history = [m for m in (history or [])[-10:] if m.get("role") in ("user", "assistant")]
+    if provider == "gemini":
+        answer = _ask_gemini(key, system, history, question)
+    else:
+        answer = _ask_claude(key, system, history, question)
+    if not answer:
+        raise RuntimeError("нейросеть не ответила, попробуйте переформулировать вопрос")
+    return answer
+
+
+def _ask_gemini(key, system, history, question):
+    import urllib.error
+    import urllib.request
+    contents = [{"role": "user" if m["role"] == "user" else "model",
+                 "parts": [{"text": str(m["content"])[:2000]}]} for m in history]
+    contents.append({"role": "user", "parts": [{"text": question}]})
+    body = json.dumps({
+        "system_instruction": {"parts": [{"text": system}]},
+        "contents": contents,
+        "generationConfig": {"maxOutputTokens": 2048},
+    }).encode("utf-8")
+
+    # Перегрузку (503) переживаем сами: повтор через секунду, потом запасная модель
+    attempts = [(m, pause) for m in GEMINI_MODELS for pause in (0, 1.5)]
+    overloaded = False
+    for model, pause in attempts:
+        if pause:
+            time.sleep(pause)
+        req = urllib.request.Request(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+            data=body, headers={"Content-Type": "application/json", "x-goog-api-key": key})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")
+            if e.code in (500, 502, 503, 504):
+                overloaded = True
+                continue
+            if e.code in (400, 401, 403):
+                raise RuntimeError("ключ Gemini не подошёл — проверь, что скопировал его целиком "
+                                   "(выдаётся на aistudio.google.com/apikey)") from e
+            if e.code == 429:
+                raise RuntimeError("бесплатный лимит Gemini на минуту исчерпан — подождите немного") from e
+            if e.code == 404:
+                continue  # такой модели больше нет — пробуем запасную
+            raise RuntimeError(f"ошибка Gemini ({e.code}): {detail[:200]}") from e
+        except urllib.error.URLError as e:
+            raise RuntimeError("нет соединения с нейросетью — проверьте интернет") from e
+        try:
+            parts = data["candidates"][0]["content"]["parts"]
+        except (KeyError, IndexError):
+            return ""
+        return "".join(p.get("text", "") for p in parts).strip()
+    if overloaded:
+        raise RuntimeError("нейросеть Google сейчас перегружена — подождите минуту и спросите ещё раз")
+    raise RuntimeError("модели Gemini недоступны — попробуйте позже")
+
+
+def _ask_claude(key, system, history, question):
+    import anthropic
+    # Клиент на каждый запрос: у разных учеников могут быть разные ключи
+    client = anthropic.Anthropic(api_key=key)
+    messages = [{"role": m["role"], "content": str(m["content"])[:2000]} for m in history]
+    messages.append({"role": "user", "content": question})
+    try:
+        resp = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=1000,
+            output_config={"effort": "low"},  # быстрые короткие ответы для урока
+            system=system,
+            messages=messages,
+        )
+    except anthropic.AuthenticationError:
+        raise RuntimeError("ключ Claude не подошёл — проверьте его на console.anthropic.com")
+    except anthropic.APIConnectionError:
+        raise RuntimeError("нет соединения с нейросетью — проверьте интернет")
+    except anthropic.RateLimitError:
+        raise RuntimeError("слишком много вопросов подряд — подождите минуту")
+    return "".join(b.text for b in resp.content if b.type == "text").strip()
+
+
 ACTIONS = {
     "forward": lambda s: robot.forward(s),
     "backward": lambda s: robot.backward(s),
@@ -123,7 +270,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        pages = {"/": "mentor_panel.html", "/index.html": "mentor_panel.html", "/tm": "tm.html"}
+        pages = {"/": "mentor_panel.html", "/index.html": "mentor_panel.html", "/tm": "tm.html",
+                 "/follow": "follow.html", "/sound": "sound.html", "/chat": "chat.html"}
         if self.path in pages:
             body = (HERE / pages[self.path]).read_bytes()
             self.send_response(200)
@@ -144,7 +292,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         elif self.path == "/api/status":
-            self._json({**state, "voice": voice_settings})
+            self._json({**state, "voice": voice_settings, "ai": ai_provider()[0]})
         elif self.path == "/api/phrases":
             self._json({"groups": PHRASE_GROUPS, "presets": load_presets()})
         else:
@@ -175,6 +323,15 @@ class Handler(BaseHTTPRequestHandler):
                 line = f"[страница] {data.get('text')} | backend={data.get('backend')}\n{data.get('stack') or ''}"
                 print(line)
                 state["client_error"] = line[:2000]
+            elif self.path == "/api/ask":
+                question = str(data.get("question", "")).strip()
+                if not question:
+                    return self._json({"error": "пустой вопрос"}, 400)
+                answer = ask_ai(question, str(data.get("personality", "")),
+                                data.get("history") or [], str(data.get("key", "")))
+                if data.get("speak", True):
+                    say(answer, gesture=True)
+                return self._json({"answer": answer})
             elif self.path == "/api/presets":
                 save_presets([t for t in data.get("items", []) if t.strip()])
             else:
