@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+tools/
+reactions*.txt
+mentor_presets.json
+*.zip
+.DS_Store

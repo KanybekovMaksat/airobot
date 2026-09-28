@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codify - IT Школа</title>
+<link rel="icon" href="/static/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.48.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="/static/codify.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/"><img src="/static/codify-logo.png" alt="Codify"><span>Робот Роберт</span></a>
+  <nav class="nav">
+    <a href="/" class="active"><i class="ti ti-layout-dashboard"></i>Панель ментора</a>
+    <a href="/tm"><i class="ti ti-brain"></i>Teachable Machine</a>
+  </nav>
+  <span class="status" id="status"><span class="dot"></span>Не подключён</span>
+  <button id="connectBtn"><i class="ti ti-plug-connected"></i>Подключить</button>
+</header>
+
+<main class="cols">
+  <section class="stack">
+    <div class="card">
+      <h2><i class="ti ti-message-2"></i>Текст для Роберта</h2>
+      <textarea id="text" placeholder="Всем привет! Я Роберт из IT-школы Codify. Сегодня мы научим меня понимать жесты."></textarea>
+      <div class="row">
+        <button class="primary" id="sayBtn"><i class="ti ti-volume"></i>Произнести</button>
+        <button class="danger" id="stopBtn"><i class="ti ti-player-stop"></i>Стоп</button>
+        <button id="saveBtn"><i class="ti ti-star"></i>В заготовки</button>
+        <span class="grow"></span>
+        <label class="opt"><input type="checkbox" id="gesture" checked>Жестикулировать</label>
+      </div>
+      <div class="row">
+        <label class="field grow">Темп<input type="range" id="rate" min="-5" max="5" value="0"></label>
+        <label class="field grow">Громкость<input type="range" id="volume" min="10" max="100" value="100"></label>
+      </div>
+      <div class="row"><span class="muted">Ctrl + Enter — произнести</span></div>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="card">
+      <h2><i class="ti ti-list-details"></i>Готовые фразы</h2>
+      <div class="tabs" id="tabs"></div>
+      <div class="list" id="phraseList"></div>
+    </div>
+  </section>
+
+  <section class="stack">
+    <div class="card">
+      <h2><i class="ti ti-checklist"></i>Чек-лист ментора<span class="grow"></span><span class="progress" id="checkProgress"></span></h2>
+      <div id="checklist"></div>
+      <div class="row">
+        <button class="ghost" id="resetChecklist"><i class="ti ti-refresh"></i>Новый урок</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><i class="ti ti-robot"></i>Движения</h2>
+      <div class="pad">
+        <span></span><button data-act="forward" title="Вперёд"><i class="ti ti-arrow-up"></i></button><span></span>
+        <button data-act="left" title="Влево"><i class="ti ti-arrow-left"></i></button>
+        <button data-act="stop" class="stop" title="Стоп"><i class="ti ti-player-stop"></i></button>
+        <button data-act="right" title="Вправо"><i class="ti ti-arrow-right"></i></button>
+        <span></span><button data-act="backward" title="Назад"><i class="ti ti-arrow-down"></i></button><span></span>
+      </div>
+      <div class="row" style="justify-content:center">
+        <button data-act="hands"><i class="ti ti-hand-stop"></i>Руки</button>
+        <button data-act="legs"><i class="ti ti-walk"></i>Ноги</button>
+        <button data-act="combo"><i class="ti ti-sparkles"></i>Комбо</button>
+        <button data-act="dance"><i class="ti ti-music"></i>Танец 10 с</button>
+      </div>
+      <div class="row" style="justify-content:center">
+        <label class="opt">Скорость
+          <select id="speed" style="width:auto"><option>0</option><option>1</option><option>2</option><option>3</option></select>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><i class="ti ti-eye"></i>Глаза</h2>
+      <div class="colors" id="colors"></div>
+      <div class="row"><label class="opt"><input type="checkbox" id="light" checked>Подсветка</label></div>
+    </div>
+
+    <div class="card">
+      <h2><i class="ti ti-history"></i>Уже сказано</h2>
+      <div class="list" id="history"><span class="muted">Пока ничего</span></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const COLORS = ["#E5484D", "#30A46C", "#246FFF", "#F5C400", "#8E4EC6", "#12A594", "#E9EEF5"];
+const MINE = "Мои заготовки";
+let groups = {}, presets = [], activeTab = MINE, eyeColor = 2;
+
+function icon(name) { const i = document.createElement("i"); i.className = "ti ti-" + name; return i; }
+function iconButton(name, title, onclick) {
+  const b = document.createElement("button"); b.title = title; b.append(icon(name)); b.onclick = onclick; return b;
+}
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  const data = await r.json();
+  $("msg").textContent = data.error || "";
+  return data;
+}
+
+function say(text) {
+  if (!text.trim()) return;
+  api("/api/say", {text, gesture: $("gesture").checked});
+}
+
+$("sayBtn").onclick = () => say($("text").value);
+$("stopBtn").onclick = () => api("/api/stop_speech", {});
+$("connectBtn").onclick = () => api("/api/connect", {});
+$("text").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.ctrlKey) say($("text").value); });
+$("saveBtn").onclick = async () => {
+  const t = $("text").value.trim();
+  if (!t || presets.includes(t)) return;
+  presets.unshift(t);
+  await api("/api/presets", {items: presets});
+  activeTab = MINE; renderTabs();
+};
+const sendVoice = () => api("/api/voice", {rate: +$("rate").value, volume: +$("volume").value});
+$("rate").onchange = sendVoice; $("volume").onchange = sendVoice;
+
+document.querySelectorAll("[data-act]").forEach((b) => {
+  b.onclick = () => api("/api/action", {kind: b.dataset.act, seconds: b.dataset.act === "dance" ? 10 : 1});
+});
+$("speed").onchange = () => api("/api/speed", {level: +$("speed").value});
+
+COLORS.forEach((c, i) => {
+  const b = document.createElement("button");
+  b.style.background = c; b.title = "Цвет " + (i + 1);
+  b.onclick = () => { eyeColor = i + 1; markColor(); api("/api/eyes", {color: eyeColor, light: $("light").checked}); };
+  $("colors").appendChild(b);
+});
+function markColor() { [...$("colors").children].forEach((b, i) => b.classList.toggle("active", i + 1 === eyeColor)); }
+markColor();
+$("light").onchange = () => api("/api/eyes", {color: eyeColor, light: $("light").checked});
+
+function renderTabs() {
+  const names = [MINE, ...Object.keys(groups)];
+  $("tabs").innerHTML = "";
+  names.forEach((n) => {
+    const b = document.createElement("button");
+    b.textContent = n; b.className = n === activeTab ? "active" : "";
+    b.onclick = () => { activeTab = n; renderTabs(); };
+    $("tabs").appendChild(b);
+  });
+  const items = activeTab === MINE ? presets : groups[activeTab] || [];
+  const list = $("phraseList"); list.innerHTML = "";
+  if (!items.length) list.innerHTML = '<span class="muted">Напишите текст сверху и нажмите «В заготовки»</span>';
+  items.forEach((t) => {
+    const row = document.createElement("div"); row.className = "item";
+    const span = document.createElement("span"); span.textContent = t;
+    row.append(span,
+      iconButton("volume", "Произнести", () => say(t)),
+      iconButton("pencil", "В поле текста", () => { $("text").value = t; $("text").focus(); }));
+    if (activeTab === MINE) {
+      row.append(iconButton("x", "Удалить", async () => {
+        presets = presets.filter((p) => p !== t);
+        await api("/api/presets", {items: presets}); renderTabs();
+      }));
+    }
+    list.appendChild(row);
+  });
+}
+
+// ---------- Чек-лист ментора (из плана урока по Teachable Machine) ----------
+const CHECKLIST = [
+  ["Перед уроком", [
+    ["charged", "Робот заряжен и сопряжён с ноутбуком (в списке Bluetooth есть «Robert»)"],
+    ["connected", "Панель показывает «Робот подключён»", "auto"],
+    ["voice", "Нажали «Произнести» — голос идёт из динамика робота"],
+    ["model", "Своя модель-пример обучена и проверена на странице Teachable Machine"],
+    ["closed", "Закрыты другие программы робота (жесты, игра, пульт) — робот и камера свободны"],
+    ["board", "На доске написан адрес teachablemachine.withgoogle.com"],
+  ]],
+  ["На уроке", [
+    ["greet", "Роберт поприветствовал класс"],
+    ["nothing", "Напомнили командам про класс «Ничего»"],
+    ["break", "Провели «Сломай модель»: команды нашли ошибки чужих моделей"],
+    ["links", "Собраны ссылки на модели всех команд"],
+  ]],
+  ["После урока", [
+    ["bye", "Роберт попрощался с классом"],
+    ["charge", "Робот выключен и поставлен на зарядку"],
+  ]],
+];
+const CHECK_KEY = "mentor_checklist";
+let checks = {};
+try { checks = JSON.parse(localStorage.getItem(CHECK_KEY)) || {}; } catch {}
+let robotConnected = false;
+
+function saveChecks() { try { localStorage.setItem(CHECK_KEY, JSON.stringify(checks)); } catch {} }
+
+function renderChecklist() {
+  const box = $("checklist"); box.innerHTML = "";
+  let done = 0, total = 0;
+  CHECKLIST.forEach(([group, items]) => {
+    const h = document.createElement("div"); h.className = "check-group"; h.textContent = group;
+    box.appendChild(h);
+    items.forEach(([id, text, auto]) => {
+      const on = auto ? robotConnected : !!checks[id];
+      total++; if (on) done++;
+      const label = document.createElement("label"); label.className = "check" + (on ? " done" : "");
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = on;
+      if (auto) { cb.disabled = true; label.title = "Отмечается автоматически"; }
+      cb.onchange = () => { checks[id] = cb.checked; saveChecks(); renderChecklist(); };
+      const span = document.createElement("span"); span.textContent = text;
+      label.append(cb, span);
+      if (auto) label.append(icon("bolt"));
+      box.appendChild(label);
+    });
+  });
+  $("checkProgress").textContent = `${done} из ${total}`;
+}
+$("resetChecklist").onclick = () => { checks = {}; saveChecks(); renderChecklist(); };
+renderChecklist();
+
+let historyKey = "";
+async function poll() {
+  try {
+    const s = await (await fetch("/api/status")).json();
+    const cls = s.connected ? "ok" : s.connecting ? "wait" : "";
+    const label = s.connected ? "Робот подключён" : s.connecting ? "Подключаюсь…" : "Робот не подключён";
+    $("status").innerHTML = `<span class="dot ${cls}"></span>${label}` +
+      (s.speaking ? ' · <span class="speaking">говорит…</span>' : "");
+    $("connectBtn").style.display = s.connected ? "none" : "";
+    if (s.connected !== robotConnected) { robotConnected = s.connected; renderChecklist(); }
+    if (s.error && !$("msg").textContent) $("msg").textContent = s.error;
+    const key = JSON.stringify(s.history);
+    if (s.history.length && key !== historyKey) {
+      historyKey = key;
+      const h = $("history"); h.innerHTML = "";
+      s.history.forEach((x) => {
+        const row = document.createElement("div"); row.className = "item";
+        const time = document.createElement("span"); time.className = "time"; time.textContent = x.time;
+        const span = document.createElement("span"); span.textContent = x.text;
+        row.append(time, span, iconButton("repeat", "Повторить", () => say(x.text)));
+        h.appendChild(row);
+      });
+    }
+  } catch { $("status").innerHTML = '<span class="dot"></span>Сервер остановлен'; }
+}
+
+(async () => {
+  const p = await api("/api/phrases");
+  groups = p.groups; presets = p.presets;
+  if (!presets.length) activeTab = Object.keys(groups)[0];
+  renderTabs(); poll(); setInterval(poll, 1000);
+})();
+</script>
+</body>
+</html>

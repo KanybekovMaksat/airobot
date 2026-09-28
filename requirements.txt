@@ -1,0 +1,9 @@
+bleak
+pyserial
+vosk
+sounddevice
+mediapipe
+opencv-python
+pillow
+numpy
+pywin32; sys_platform == "win32"

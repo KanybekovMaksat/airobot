@@ -1,0 +1,8 @@
+# Скрипты запуска хранятся байт-в-байт: .bat — с переводами строк Windows, .command — с переводами строк Mac
+*.bat -text
+*.command -text
+*.task binary
+*.fst binary
+*.mdl binary
+*.ttf binary
+models/** -text
