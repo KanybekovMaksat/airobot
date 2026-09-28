@@ -22,9 +22,9 @@ const Robert = (() => {
     "Gemini": "Джемини",
   };
 
-  let device = null, writeChar = null, connecting = false;
+  let device = null, writeChar = null, connecting = false, wantConnected = false;
   let speed = 0, color = 2, light = LIGHT_ON;
-  let writeQueue = Promise.resolve();
+  let writeQueue = Promise.resolve(), lastWrite = 0;
   const statusCbs = [];
 
   function packet(action, param = 8) {
@@ -41,6 +41,12 @@ const Robert = (() => {
   }
 
   // ---------- подключение ----------
+  async function attach() {
+    const gatt = await device.gatt.connect();
+    const svc = await gatt.getPrimaryService(SERVICE);
+    writeChar = await svc.getCharacteristic(WRITE_CHAR);
+  }
+
   async function connect() {
     if (!navigator.bluetooth)
       throw new Error("этот браузер не умеет Web Bluetooth — откройте сайт в Chrome или Edge (не iPhone)");
@@ -48,16 +54,29 @@ const Robert = (() => {
     try {
       device = await navigator.bluetooth.requestDevice({
         filters: [{namePrefix: "Robert"}], optionalServices: [SERVICE]});
-      device.addEventListener("gattserverdisconnected", () => { writeChar = null; notify(); });
-      const gatt = await device.gatt.connect();
-      const svc = await gatt.getPrimaryService(SERVICE);
-      writeChar = await svc.getCharacteristic(WRITE_CHAR);
+      device.addEventListener("gattserverdisconnected", onDropped);
+      await attach();
+      wantConnected = true;
+      lastWrite = Date.now();
     } finally {
       connecting = false; notify();
     }
   }
 
+  // Связь оборвалась сама (робот далеко, помехи) — тихо переподключаемся
+  async function onDropped() {
+    writeChar = null; notify();
+    if (!wantConnected) return;
+    connecting = true; notify();
+    for (let i = 0; i < 5 && wantConnected && device; i++) {
+      await new Promise((r) => setTimeout(r, 1000 + i * 1000));
+      try { await attach(); break; } catch {}
+    }
+    connecting = false; notify();
+  }
+
   function disconnect() {
+    wantConnected = false;
     if (device && device.gatt.connected) {
       try { send(IDLE); } catch {}
       device.gatt.disconnect();
@@ -65,10 +84,19 @@ const Robert = (() => {
     writeChar = null; notify();
   }
 
+  // «Пульс»: робот сам выключается через ~8 минут без команд, поэтому раз в полторы
+  // минуты тишины шлём безобидный «стоп», чтобы он не засыпал
+  setInterval(() => {
+    if (connected() && Date.now() - lastWrite > 90000) {
+      try { send(IDLE); } catch {}
+    }
+  }, 30000);
+
   // Записи по одной: BLE не любит параллельные операции
   function send(action, param = 8) {
     if (!connected()) throw new Error("робот не подключён — нажмите «Подключить робота»");
     const data = packet(action, param);
+    lastWrite = Date.now();
     writeQueue = writeQueue
       .then(() => writeChar.writeValueWithoutResponse(data))
       .catch(() => {});
