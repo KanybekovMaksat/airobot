@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Звуковые команды — Роберт</title>
+<link rel="icon" href="static/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="static/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.48.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="static/codify.css">
+<style>
+  .listen { display: flex; align-items: center; gap: 10px; margin-top: 12px; color: var(--muted); font-size: 14px; }
+  .listen .pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+  .listen.on .pulse { background: var(--ok); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(23,163,74,.4); } 50% { box-shadow: 0 0 0 7px rgba(23,163,74,0); } }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><img src="static/codify-logo.png" alt="Codify"><span>Робот Роберт</span></a>
+  <nav class="nav">
+    <a href="index.html"><i class="ti ti-layout-dashboard"></i>Панель</a>
+    <a href="tm.html"><i class="ti ti-brain"></i>Teachable Machine</a>
+    <a href="follow.html"><i class="ti ti-focus-2"></i>Следуй за мной</a>
+    <a href="sound.html" class="active"><i class="ti ti-microphone"></i>Звуковые команды</a>
+    <a href="chat.html"><i class="ti ti-message-chatbot"></i>Спроси Роберта</a>
+  </nav>
+  <span class="status" id="robotStatus"><span class="dot"></span>…</span>
+  <button id="connectBtn"><i class="ti ti-plug-connected"></i>Подключить робота</button>
+</header>
+
+<main class="cols-tm">
+  <section class="stack">
+    <div class="card">
+      <h2><i class="ti ti-link"></i>Модель</h2>
+      <input type="text" id="url" placeholder="https://teachablemachine.withgoogle.com/models/…/">
+      <div class="row">
+        <button class="primary" id="startBtn"><i class="ti ti-player-play"></i>Запустить</button>
+        <button id="stopBtn"><i class="ti ti-player-stop"></i>Остановить</button>
+      </div>
+      <div class="listen" id="listen"><span class="pulse"></span><span id="listenText">Микрофон выключен</span></div>
+      <div class="msg" id="msg"></div>
+    </div>
+    <div class="card">
+      <h2><i class="ti ti-adjustments-horizontal"></i>Срабатывание</h2>
+      <label class="field">Уверенность не ниже <b id="thrVal">80%</b>
+        <input type="range" id="thr" min="50" max="99" value="80"></label>
+      <label class="field" style="margin-top:14px">Пауза между командами <b id="cdVal">2.0 с</b>
+        <input type="range" id="cd" min="5" max="50" value="20"></label>
+    </div>
+    <div class="card">
+      <h2><i class="ti ti-info-circle"></i>Как получить ссылку на модель</h2>
+      <ol class="steps">
+        <li>Откройте <b>teachablemachine.withgoogle.com</b> → Get Started → <b>Audio Project</b>.</li>
+        <li>Запишите <b>Background Noise</b> (20 секунд тишины класса) — обязательный класс.</li>
+        <li>Добавьте свои классы: слова, хлопки, свист, щелчки — по 8+ примеров.</li>
+        <li>Нажмите <b>Train Model</b> и проверьте модель в окне Preview.</li>
+        <li><b>Export Model</b> → Tensorflow.js → <b>Upload my model</b> → скопируйте ссылку сюда.</li>
+      </ol>
+      <p class="muted">Звук — это тоже картинка для нейросети: микрофон превращается в спектрограмму
+      (график частот во времени), и модель классифицирует её как обычное изображение.</p>
+    </div>
+  </section>
+
+  <section class="stack">
+    <div class="card">
+      <h2><i class="ti ti-arrows-right-left"></i>Звуки и реакции Роберта</h2>
+      <div id="classes"><span class="muted">Вставьте ссылку на модель и нажмите «Запустить».</span></div>
+    </div>
+  </section>
+</main>
+
+<script src="robert.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const ACTIONS = [
+  ["none", "Ничего не делать"], ["say", "Сказать текст"], ["hands", "Движение руками"], ["legs", "Движение ногами"],
+  ["combo", "Комбо-движение"], ["dance", "Танец 10 с"],
+  ["forward", "Идти вперёд (3 с)"], ["backward", "Идти назад (3 с)"],
+  ["left", "Повернуть влево (2 с)"], ["right", "Повернуть вправо (2 с)"], ["stop", "Стоп"],
+  ["eyes1", "Глаза: тёмно-синие"], ["eyes2", "Глаза: голубые"], ["eyes3", "Глаза: зелёные"],
+  ["eyes4", "Глаза: жёлтые"], ["eyes5", "Глаза: красные"], ["eyes6", "Глаза: фиолетовые"], ["eyes7", "Глаза: белые"],
+];
+
+let recognizer = null, labels = [], mapping = {}, listening = false;
+let lastLabel = null, lastFiredAt = 0;
+
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+$("url").value = store.get("sound_url", "");
+
+const showErr = (where, e) => { $("msg").textContent = "Ошибка — " + where + ": " + (e && e.message ? e.message : e); };
+const robotDo = (fn) => { try { fn(); } catch (e) { $("msg").textContent = e.message; } };
+
+function loadScript(src) {
+  if (document.querySelector(`script[src="${src}"]`)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = resolve; s.onerror = () => reject(new Error("не загрузилась библиотека " + src));
+    document.head.appendChild(s);
+  });
+}
+
+function isBackground(label) {
+  return /background|noise|фон|шум/i.test(label);
+}
+
+function doAction(label) {
+  const m = mapping[label] || {act: "none"};
+  if (m.act === "none") return;
+  if (m.act === "say") return m.text && Robert.say(m.text);
+  robotDo(() => {
+    if (m.act.startsWith("eyes")) return Robert.eyes(+m.act.slice(4));
+    if (m.act === "dance") return Robert.dance(10);
+    if (m.act === "stop") return Robert.stop();
+    if (m.act === "forward") return Robert.walkFor(Robert.FORWARD, 3);
+    if (m.act === "backward") return Robert.walkFor(Robert.BACKWARD, 3);
+    if (m.act === "left") return Robert.walkFor(Robert.LEFT, 2);
+    if (m.act === "right") return Robert.walkFor(Robert.RIGHT, 2);
+    Robert[m.act]();
+  });
+}
+
+function renderClasses() {
+  const box = $("classes"); box.innerHTML = "";
+  labels.forEach((label, i) => {
+    const m = mapping[label] || (mapping[label] = {act: "none", text: ""});
+    const div = document.createElement("div"); div.className = "cls"; div.id = "cls" + i;
+    div.innerHTML = `<div class="cls-head"><span></span><span class="pct" id="p${i}">0%</span></div>
+      <div class="bar"><div id="b${i}"></div></div><div class="map"></div>`;
+    div.querySelector(".cls-head span").textContent = label + (isBackground(label) ? " (фон — реакцию не ставим)" : "");
+    const sel = document.createElement("select");
+    ACTIONS.forEach(([v, t]) => sel.add(new Option(t, v, false, v === m.act)));
+    const txt = document.createElement("input"); txt.type = "text"; txt.value = m.text || "";
+    txt.placeholder = "Что сказать, например: Слышу хлопок!";
+    const sync = () => { m.act = sel.value; m.text = txt.value; txt.style.visibility = m.act === "say" ? "" : "hidden";
+                         store.set("sound_map:" + $("url").value, mapping); };
+    sel.onchange = sync; txt.oninput = sync; sync();
+    div.querySelector(".map").append(sel, txt);
+    box.appendChild(div);
+  });
+}
+
+function onResult(result) {
+  const scores = result.scores, thr = $("thr").value / 100;
+  let bi = 0;
+  scores.forEach((p, i) => {
+    $("p" + i).textContent = Math.round(p * 100) + "%";
+    $("b" + i).style.width = p * 100 + "%";
+    if (p > scores[bi]) bi = i;
+  });
+  const label = labels[bi], now = Date.now(), cooldown = $("cd").value * 100;
+  labels.forEach((l, i) => $("cls" + i).classList.toggle("fired", i === bi && scores[bi] >= thr));
+  if (scores[bi] < thr || isBackground(label)) return;
+  if (label === lastLabel && now - lastFiredAt < cooldown) return;
+  lastLabel = label; lastFiredAt = now;
+  doAction(label);
+}
+
+async function start() {
+  $("msg").textContent = "";
+  let url = $("url").value.trim();
+  if (!url) { $("msg").textContent = "Вставьте ссылку на модель"; return; }
+  if (!url.endsWith("/")) url += "/";
+  store.set("sound_url", url);
+  $("startBtn").disabled = true;
+  try {
+    $("msg").textContent = "Загружаю модель…";
+    await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js");
+    await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.4.0/dist/speech-commands.min.js");
+    if (recognizer && listening) { await recognizer.stopListening(); listening = false; }
+    recognizer = speechCommands.create("BROWSER_FFT", undefined, url + "model.json", url + "metadata.json");
+    await recognizer.ensureModelLoaded();
+    $("msg").textContent = "";
+  } catch (e) {
+    $("startBtn").disabled = false;
+    showErr("загрузка модели (нужна ссылка на Audio Project)", e);
+    return;
+  }
+  labels = recognizer.wordLabels();
+  mapping = store.get("sound_map:" + $("url").value, {});
+  renderClasses();
+  try {
+    await recognizer.listen((r) => onResult(r), {
+      probabilityThreshold: 0, overlapFactor: 0.6, invokeCallbackOnNoiseAndUnknown: true,
+    });
+  } catch (e) {
+    $("startBtn").disabled = false;
+    $("msg").textContent = "Нет доступа к микрофону (его может занимать другая программа)";
+    return;
+  }
+  $("startBtn").disabled = false;
+  listening = true;
+  lastLabel = null; lastFiredAt = 0;
+  $("listen").classList.add("on");
+  $("listenText").textContent = "Слушаю… скажите или издайте звук из модели";
+}
+
+async function stop() {
+  if (recognizer && listening) { try { await recognizer.stopListening(); } catch {} }
+  listening = false;
+  $("listen").classList.remove("on");
+  $("listenText").textContent = "Микрофон выключен";
+  if (Robert.connected()) Robert.stop();
+}
+
+$("startBtn").onclick = () => start().catch((e) => showErr("запуск", e));
+$("stopBtn").onclick = stop;
+$("thr").oninput = () => $("thrVal").textContent = $("thr").value + "%";
+$("cd").oninput = () => $("cdVal").textContent = ($("cd").value / 10).toFixed(1) + " с";
+</script>
+</body>
+</html>

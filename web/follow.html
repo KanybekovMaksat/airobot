@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Следуй за мной — Роберт</title>
+<link rel="icon" href="static/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="static/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.48.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="static/codify.css">
+<style>
+  .gauge { position: relative; height: 34px; background: #EEF2F8; border-radius: 8px; overflow: hidden; }
+  .gauge .dead { position: absolute; top: 0; bottom: 0; background: var(--primary-soft); }
+  .gauge .mid { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--line); left: 50%; }
+  .gauge .pos { position: absolute; top: 3px; bottom: 3px; width: 6px; border-radius: 3px;
+                background: var(--primary); left: 50%; transition: left .12s; }
+  .decision { font-size: 20px; font-weight: 600; margin: 10px 0 4px; min-height: 30px; }
+  .decision .cmd { color: var(--primary); }
+  .decision .lost { color: var(--danger); }
+  .zone-bars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .zone-bars .zb b { font-size: 13px; }
+  .zone-bars .pct { float: right; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><img src="static/codify-logo.png" alt="Codify"><span>Робот Роберт</span></a>
+  <nav class="nav">
+    <a href="index.html"><i class="ti ti-layout-dashboard"></i>Панель</a>
+    <a href="tm.html"><i class="ti ti-brain"></i>Teachable Machine</a>
+    <a href="follow.html" class="active"><i class="ti ti-focus-2"></i>Следуй за мной</a>
+    <a href="sound.html"><i class="ti ti-microphone"></i>Звуковые команды</a>
+    <a href="chat.html"><i class="ti ti-message-chatbot"></i>Спроси Роберта</a>
+  </nav>
+  <span class="status" id="robotStatus"><span class="dot"></span>…</span>
+  <button id="connectBtn"><i class="ti ti-plug-connected"></i>Подключить робота</button>
+</header>
+
+<main class="cols-tm">
+  <section class="stack">
+    <div class="card">
+      <h2><i class="ti ti-focus-2"></i>За чем следить</h2>
+      <div class="tabs">
+        <button id="tabFace" class="active">Лицо</button>
+        <button id="tabHand">Ладонь</button>
+        <button id="tabTm">Свой объект (TM)</button>
+      </div>
+      <div id="tmBlock" style="display:none">
+        <label class="field">Ссылка на модель Teachable Machine
+          <input type="text" id="url" placeholder="https://teachablemachine.withgoogle.com/models/…/"></label>
+        <label class="field" style="margin-top:10px">Класс-объект (за чем следим)
+          <select id="clsSel"><option>сначала запустите</option></select></label>
+        <label class="field" style="margin-top:10px">Уверенность не ниже <b id="thrVal">70%</b>
+          <input type="range" id="thr" min="50" max="95" value="70"></label>
+      </div>
+      <div class="row">
+        <button class="primary" id="startBtn"><i class="ti ti-player-play"></i>Запустить</button>
+        <button id="stopBtn"><i class="ti ti-player-stop"></i>Остановить</button>
+      </div>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="card">
+      <h2><i class="ti ti-adjustments-horizontal"></i>Настройки</h2>
+      <label class="field">Мёртвая зона (в центре робот стоит) <b id="dzVal">±10%</b>
+        <input type="range" id="dz" min="3" max="20" value="10"></label>
+      <div class="row"><label class="opt"><input type="checkbox" id="swap">Поменять «влево» и «вправо»</label></div>
+      <div class="row"><label class="opt"><input type="checkbox" id="dist">Держать дистанцию (идти за лицом/ладонью)</label></div>
+      <div class="row"><label class="opt"><input type="checkbox" id="eyesInd" checked>Глаза-индикатор: зелёные — вижу, красные — потерял</label></div>
+    </div>
+
+    <div class="card">
+      <h2><i class="ti ti-info-circle"></i>Как это работает</h2>
+      <ol class="steps">
+        <li>Камера отдаёт кадр нейросети.</li>
+        <li>Нейросеть находит объект и возвращает его <b>координату x</b> (0 — левый край, 1 — правый).</li>
+        <li>Простое правило превращает координату в команду: левее мёртвой зоны — поворот в одну сторону, правее — в другую, в центре — стоп.</li>
+      </ol>
+      <p class="muted">Так же устроен автопилот: камера → нейросеть → координата → правило → команда моторам.
+      Видео зеркальное, поэтому когда вы на экране справа — для Роберта, стоящего лицом к вам, вы слева.
+      В режиме «Свой объект» модель-классификатор смотрит в три окна кадра — окно с наибольшей уверенностью и есть положение объекта.</p>
+    </div>
+  </section>
+
+  <section class="stack">
+    <div class="card">
+      <h2><i class="ti ti-camera"></i>Камера</h2>
+      <div class="camera"><canvas id="view" width="640" height="480"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h2><i class="ti ti-route"></i>Решение Роберта</h2>
+      <div class="gauge" id="gauge"><div class="dead" id="dead"></div><div class="mid"></div><div class="pos" id="posMark"></div></div>
+      <div class="decision" id="decision"><span class="muted">Нажмите «Запустить»</span></div>
+      <div class="muted" id="reason"></div>
+      <div class="zone-bars" id="zones" style="display:none">
+        <div class="zb"><b>Слева</b><span class="pct" id="zp0">0%</span><div class="bar"><div id="zb0"></div></div></div>
+        <div class="zb"><b>В центре</b><span class="pct" id="zp1">0%</span><div class="bar"><div id="zb1"></div></div></div>
+        <div class="zb"><b>Справа</b><span class="pct" id="zp2">0%</span><div class="bar"><div id="zb2"></div></div></div>
+      </div>
+      <div class="list" id="log" style="margin-top:14px"></div>
+    </div>
+  </section>
+</main>
+
+<script src="robert.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const CMD_NAMES = {left: "Влево", right: "Вправо", forward: "Вперёд", backward: "Назад",
+                   center: "Стоп: объект в центре", lost: "Стоп: объект потерян"};
+const HOLD = {left: 2, right: 2, forward: 3, backward: 3, center: 2, lost: 8};
+const NEAR = 0.32, FAR = 0.12;
+const WALK_ACTION = {left: () => Robert.LEFT, right: () => Robert.RIGHT,
+                     forward: () => Robert.FORWARD, backward: () => Robert.BACKWARD};
+
+let mode = "face", running = false;
+let video = null, stream = null;
+let faceDetector = null, handLandmarker = null;
+let tmModel = null, tmUrl = "", tmLabels = [];
+let last = {pos: null, box: null, zones: null};
+let candidate = null, streak = 0, activeCmd = null, eyesColor = 0;
+
+const view = $("view"), ctx = view.getContext("2d");
+const crop = document.createElement("canvas"); crop.width = crop.height = 224;
+
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+$("url").value = store.get("follow_tm_url", "");
+
+const reportError = (where, e) => { $("msg").textContent = "Ошибка — " + where + ": " + (e && e.message ? e.message : e); };
+
+function loadScript(src) {
+  if (document.querySelector(`script[src="${src}"]`)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = resolve; s.onerror = () => reject(new Error("не загрузилась библиотека " + src));
+    document.head.appendChild(s);
+  });
+}
+
+// ---------- режимы ----------
+const TABS = {face: "tabFace", hand: "tabHand", tm: "tabTm"};
+for (const [m, id] of Object.entries(TABS))
+  $(id).onclick = () => {
+    if (running) stop();
+    mode = m;
+    for (const [m2, id2] of Object.entries(TABS)) $(id2).classList.toggle("active", m2 === m);
+    $("tmBlock").style.display = m === "tm" ? "" : "none";
+    $("zones").style.display = "none";
+  };
+
+// ---------- камера ----------
+async function openCamera() {
+  if (stream) return;
+  stream = await navigator.mediaDevices.getUserMedia(
+    {video: {width: {ideal: 1280}, height: {ideal: 720}, facingMode: "user"}});
+  video = document.createElement("video");
+  video.srcObject = stream; video.muted = true; video.playsInline = true;
+  await video.play();
+  view.width = video.videoWidth; view.height = video.videoHeight;
+}
+
+function closeCamera() {
+  if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; video = null; }
+}
+
+// ---------- загрузка моделей ----------
+async function prepareDetector() {
+  if (mode === "tm") return prepareTm();
+  const mp = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14");
+  const files = await mp.FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  if (mode === "face" && !faceDetector)
+    faceDetector = await mp.FaceDetector.createFromOptions(files, {
+      baseOptions: {modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite"},
+      runningMode: "VIDEO"});
+  if (mode === "hand" && !handLandmarker)
+    handLandmarker = await mp.HandLandmarker.createFromOptions(files, {
+      baseOptions: {modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"},
+      runningMode: "VIDEO", numHands: 1});
+}
+
+async function prepareTm() {
+  let url = $("url").value.trim();
+  if (!url) throw new Error("вставьте ссылку на модель Teachable Machine");
+  if (!url.endsWith("/")) url += "/";
+  store.set("follow_tm_url", url);
+  if (tmModel && tmUrl === url) return;
+  await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js");
+  await loadScript("https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js");
+  const meta = await (await fetch(url + "metadata.json")).json();
+  if (String(meta.packageName || "").includes("pose"))
+    throw new Error("нужна модель картинок (Image Project), а это модель поз");
+  tmModel = await tmImage.load(url + "model.json", url + "metadata.json");
+  await attachMobileNetIfNeeded(tmModel);
+  tmUrl = url;
+  tmLabels = tmModel.getClassLabels();
+  const sel = $("clsSel"); sel.innerHTML = "";
+  tmLabels.forEach((l) => sel.add(new Option(l, l)));
+  const target = tmLabels.find((l) => !/нич|пуст|фон|background|nothing/i.test(l)) || tmLabels[0];
+  sel.value = store.get("follow_tm_cls:" + url, target);
+  sel.onchange = () => store.set("follow_tm_cls:" + url, sel.value);
+}
+
+async function attachMobileNetIfNeeded(m) {
+  const head = m.model;
+  const inShape = head.inputs[0].shape;
+  if (inShape.length !== 2) return;
+  const features = inShape[1];
+  const settings = (m.getMetadata && m.getMetadata().modelSettings && m.getMetadata().modelSettings.mobilenet) || {};
+  const options = features === 1280
+    ? {version: 2, alpha: settings.alpha || 0.35}
+    : {version: 1, alpha: settings.alpha || features / (7 * 7 * 1024)};
+  $("msg").textContent = "Загружаю MobileNet для модели…";
+  const base = await tmImage.loadTruncatedMobileNet(options);
+  m.model = {predict: (x) => head.predict(base.predict(x))};
+  $("msg").textContent = "";
+}
+
+// ---------- поиск объекта (экранные координаты, видео зеркальное) ----------
+function mirrorBox(x, y, w, h, W, H) {
+  return {x: 1 - (x + w) / W, y: y / H, w: w / W, h: h / H};
+}
+
+function detectFace() {
+  const res = faceDetector.detectForVideo(video, performance.now());
+  let best = null;
+  for (const d of res.detections) {
+    const b = d.boundingBox;
+    if (!best || b.width > best.width) best = b;
+  }
+  if (!best) return {pos: null};
+  const box = mirrorBox(best.originX, best.originY, best.width, best.height, video.videoWidth, video.videoHeight);
+  return {pos: box.x + box.w / 2, size: box.w, box};
+}
+
+function detectHand() {
+  const res = handLandmarker.detectForVideo(video, performance.now());
+  const lm = res.landmarks && res.landmarks[0];
+  if (!lm) return {pos: null};
+  const xs = lm.map((p) => p.x), ys = lm.map((p) => p.y);
+  const x = Math.min(...xs), w = Math.max(...xs) - x, y = Math.min(...ys), h = Math.max(...ys) - y;
+  const box = {x: 1 - x - w, y, w, h};
+  return {pos: box.x + box.w / 2, size: box.w, box};
+}
+
+async function detectTm() {
+  const W = video.videoWidth, H = video.videoHeight, s = Math.min(W, H);
+  const rawX = [W - s, (W - s) / 2, 0];
+  const target = $("clsSel").value, cctx = crop.getContext("2d");
+  const zones = [];
+  for (const sx of rawX) {
+    cctx.save(); cctx.scale(-1, 1);
+    cctx.drawImage(video, sx, (H - s) / 2, s, s, -224, 0, 224, 224);
+    cctx.restore();
+    const preds = await tmModel.predict(crop);
+    const p = preds.find((q) => q.className === target);
+    zones.push(p ? p.probability : 0);
+  }
+  const centers = rawX.map((sx) => 1 - (sx + s / 2) / W);
+  let bi = zones.indexOf(Math.max(...zones));
+  if (zones[bi] < $("thr").value / 100) return {pos: null, zones};
+  return {pos: centers[bi], zones};
+}
+
+// ---------- решение ----------
+function decide(d) {
+  if (d.pos === null) return "lost";
+  const dz = $("dz").value / 100, swap = $("swap").checked;
+  if (d.pos > 0.5 + dz) return swap ? "right" : "left";
+  if (d.pos < 0.5 - dz) return swap ? "left" : "right";
+  if ($("dist").checked && d.size) {
+    if (d.size > NEAR) return "backward";
+    if (d.size < FAR) return "forward";
+  }
+  return "center";
+}
+
+function sendCmd(cmd) {
+  try {
+    const color = cmd === "lost" ? 5 : 3;  // 3 — зелёный «вижу», 5 — красный «потерял»
+    const needEyes = $("eyesInd").checked && eyesColor !== color;
+    if (needEyes) { eyesColor = color; Robert.eyes(color); }  // смена цвета заодно останавливает
+    if (cmd === "center" || cmd === "lost") {
+      if (!needEyes) Robert.stop();
+    } else {
+      Robert.walk(WALK_ACTION[cmd]());  // команды идут по очереди, порядок гарантирован
+    }
+  } catch (e) { $("msg").textContent = e.message; }
+  const item = document.createElement("div"); item.className = "item";
+  item.innerHTML = `<span></span><span class="time">${new Date().toLocaleTimeString()}</span>`;
+  item.querySelector("span").textContent = CMD_NAMES[cmd];
+  $("log").prepend(item);
+  while ($("log").children.length > 6) $("log").lastChild.remove();
+}
+
+// ---------- отрисовка ----------
+function draw() {
+  if (!running) return;
+  const W = view.width, H = view.height;
+  ctx.save(); ctx.scale(-1, 1); ctx.drawImage(video, -W, 0, W, H); ctx.restore();
+
+  const dz = $("dz").value / 100;
+  ctx.fillStyle = "rgba(36,111,255,.10)";
+  ctx.fillRect(W * (0.5 - dz), 0, W * 2 * dz, H);
+  ctx.strokeStyle = "rgba(36,111,255,.5)"; ctx.lineWidth = 1;
+  ctx.strokeRect(W * (0.5 - dz), 0, W * 2 * dz, H);
+
+  if (last.box) {
+    const b = last.box;
+    ctx.strokeStyle = "#246FFF"; ctx.lineWidth = 3;
+    ctx.strokeRect(b.x * W, b.y * H, b.w * W, b.h * H);
+  }
+  if (last.zones) {
+    const third = W / 3;
+    last.zones.forEach((p, i) => {
+      ctx.fillStyle = `rgba(36,111,255,${p * 0.35})`;
+      ctx.fillRect(i * third, 0, third, H);
+      ctx.fillStyle = "#fff"; ctx.font = "bold 20px Onest, sans-serif";
+      ctx.fillText(Math.round(p * 100) + "%", i * third + 12, 30);
+    });
+  }
+  if (last.pos !== null && last.pos !== undefined) {
+    ctx.strokeStyle = "#E59A00"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(last.pos * W, 0); ctx.lineTo(last.pos * W, H); ctx.stroke();
+  }
+  requestAnimationFrame(draw);
+}
+
+function showDecision(d, cmd) {
+  const dz = $("dz").value / 100;
+  $("dead").style.left = (50 - dz * 100) + "%";
+  $("dead").style.width = dz * 200 + "%";
+  if (d.pos !== null) {
+    $("posMark").style.left = `calc(${(d.pos * 100).toFixed(1)}% - 3px)`;
+    const side = d.pos > 0.5 + dz ? "справа" : d.pos < 0.5 - dz ? "слева" : "в центре";
+    $("decision").innerHTML = `x = ${d.pos.toFixed(2)} — ${side} → <span class="cmd"></span>`;
+    $("decision").querySelector(".cmd").textContent = CMD_NAMES[cmd] || "…";
+    $("reason").textContent = side === "в центре" ? "" :
+      "На зеркальном экране вы " + side + " — для Роберта это его " +
+      (cmd === "left" ? "левая" : cmd === "right" ? "правая" : "…") + " сторона.";
+  } else {
+    $("decision").innerHTML = `<span class="lost">Объект не найден</span>`;
+    $("reason").textContent = "";
+  }
+  if (d.zones) d.zones.forEach((p, i) => {
+    $("zp" + i).textContent = Math.round(p * 100) + "%";
+    $("zb" + i).style.width = p * 100 + "%";
+  });
+}
+
+// ---------- главный цикл ----------
+async function tick() {
+  if (!running) return;
+  let d;
+  try {
+    d = mode === "face" ? detectFace() : mode === "hand" ? detectHand() : await detectTm();
+  } catch (e) {
+    reportError("распознавание", e);
+    setTimeout(tick, 1000);
+    return;
+  }
+  last = {pos: d.pos, box: d.box || null, zones: d.zones || null};
+  const cmd = decide(d);
+  streak = cmd === candidate ? streak + 1 : 1;
+  candidate = cmd;
+  if (streak >= (HOLD[cmd] || 3) && cmd !== activeCmd) {
+    activeCmd = cmd;
+    sendCmd(cmd);
+  }
+  showDecision(d, cmd);
+  setTimeout(tick, mode === "tm" ? 300 : 100);
+}
+
+async function start() {
+  $("msg").textContent = "";
+  $("startBtn").disabled = true;
+  try {
+    $("msg").textContent = "Загружаю модель…";
+    await prepareDetector();
+    $("msg").textContent = "";
+    await openCamera();
+  } catch (e) {
+    $("startBtn").disabled = false;
+    if (String(e.name).includes("NotAllowed") || String(e.name).includes("NotReadable"))
+      $("msg").textContent = "Нет доступа к камере (её может занимать другая программа)";
+    else reportError("запуск", e);
+    return;
+  }
+  $("startBtn").disabled = false;
+  $("zones").style.display = mode === "tm" ? "" : "none";
+  running = true;
+  candidate = activeCmd = null; streak = 0; eyesColor = 0;
+  requestAnimationFrame(draw);
+  tick();
+}
+
+function stop() {
+  if (!running) { closeCamera(); return; }
+  running = false;
+  closeCamera();
+  if (Robert.connected()) Robert.stop();
+  $("decision").innerHTML = '<span class="muted">Остановлено</span>';
+  $("reason").textContent = "";
+  last = {pos: null, box: null, zones: null};
+}
+
+$("startBtn").onclick = () => start();
+$("stopBtn").onclick = stop;
+$("dz").oninput = () => $("dzVal").textContent = "±" + $("dz").value + "%";
+$("thr").oninput = () => $("thrVal").textContent = $("thr").value + "%";
+</script>
+</body>
+</html>

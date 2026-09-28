@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Робот Роберт — Codify</title>
+<link rel="icon" href="static/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="static/favicon.png">
+<link rel="apple-touch-icon" href="static/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.48.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="static/codify.css">
+<style>
+  /* Три колонки в один ряд: речь и фразы | движения и глаза | чек-лист */
+  main.cols3 { grid-template-columns: 1.1fr 0.95fr 0.95fr; max-width: 1360px; }
+  @media (max-width: 1100px) { main.cols3 { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 860px) { main.cols3 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><img src="static/codify-logo.png" alt="Codify"><span>Робот Роберт</span></a>
+  <nav class="nav">
+    <a href="index.html" class="active"><i class="ti ti-layout-dashboard"></i>Панель</a>
+    <a href="tm.html"><i class="ti ti-brain"></i>Teachable Machine</a>
+    <a href="follow.html"><i class="ti ti-focus-2"></i>Следуй за мной</a>
+    <a href="sound.html"><i class="ti ti-microphone"></i>Звуковые команды</a>
+    <a href="chat.html"><i class="ti ti-message-chatbot"></i>Спроси Роберта</a>
+  </nav>
+  <span class="status" id="robotStatus"><span class="dot"></span>…</span>
+  <button id="connectBtn"><i class="ti ti-plug-connected"></i>Подключить робота</button>
+</header>
+
+<main class="cols3">
+  <section class="stack">
+    <div class="card">
+      <h2><i class="ti ti-message"></i>Текст для Роберта</h2>
+      <textarea id="text" placeholder="Напишите, что сказать, и нажмите «Произнести»">Всем привет! Я Роберт из IT-школы Codify.</textarea>
+      <div class="row">
+        <button class="primary" id="sayBtn"><i class="ti ti-volume"></i>Произнести</button>
+        <button id="stopSayBtn"><i class="ti ti-player-stop"></i>Стоп</button>
+        <label class="opt"><input type="checkbox" id="gesture" checked>Жестикулировать</label>
+      </div>
+      <div class="row">
+        <label class="field grow">Темп<input type="range" id="rate" min="6" max="14" value="10"></label>
+        <label class="field grow">Громкость<input type="range" id="volume" min="0" max="10" value="10"></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><i class="ti ti-list"></i>Готовые фразы</h2>
+      <div class="tabs" id="groups"></div>
+      <div class="list" id="phrases"></div>
+    </div>
+
+  </section>
+
+  <section class="stack">
+    <div class="card">
+      <h2><i class="ti ti-run"></i>Движения</h2>
+      <div class="pad">
+        <span></span><button data-walk="FORWARD"><i class="ti ti-arrow-up"></i></button><span></span>
+        <button data-walk="LEFT"><i class="ti ti-arrow-left"></i></button>
+        <button class="stop" id="stopBtn"><i class="ti ti-square"></i></button>
+        <button data-walk="RIGHT"><i class="ti ti-arrow-right"></i></button>
+        <span></span><button data-walk="BACKWARD"><i class="ti ti-arrow-down"></i></button><span></span>
+      </div>
+      <div class="row" style="justify-content:center">
+        <button id="handsBtn">✋ Руки</button>
+        <button id="legsBtn">🦵 Ноги</button>
+        <button id="comboBtn">🕺 Комбо</button>
+        <button id="danceBtn"><i class="ti ti-music"></i>Танец 10 с</button>
+      </div>
+      <div class="row" style="justify-content:center">
+        <span class="muted">Скорость</span>
+        <select id="speed" style="width:70px"><option>0</option><option>1</option><option>2</option><option>3</option></select>
+      </div>
+      <p class="muted" style="text-align:center">Кнопки-стрелки: зажать — идти, отпустить — стоп.</p>
+    </div>
+
+    <div class="card">
+      <h2><i class="ti ti-eye"></i>Глаза</h2>
+      <div class="colors" id="colors"></div>
+      <div class="row"><label class="opt"><input type="checkbox" id="light" checked>Подсветка</label></div>
+    </div>
+
+    <div class="msg" id="msg"></div>
+  </section>
+
+  <section class="stack">
+    <div class="card">
+      <h2><i class="ti ti-checklist"></i>Чек-лист ментора<span class="grow"></span><span class="progress" id="checkProgress"></span></h2>
+      <div id="checklist"></div>
+      <div class="row">
+        <button class="ghost" id="resetChecklist"><i class="ti ti-refresh"></i>Новый урок</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><i class="ti ti-info-circle"></i>Как подключить робота</h2>
+      <ol class="steps">
+        <li>Откройте этот сайт в <b>Chrome</b> или <b>Edge</b> (на iPhone не работает).</li>
+        <li>Включите робота (кнопка на груди, 5 секунд) и Bluetooth на компьютере.</li>
+        <li>Нажмите <b>«Подключить робота»</b> вверху и выберите <b>Robert</b> в списке.</li>
+        <li>Чтобы голос шёл из робота, сопрягите его как колонку: Параметры → Bluetooth → Добавить устройство → Robert.</li>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<script src="robert.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const showErr = (e) => { $("msg").textContent = e.message || e; setTimeout(() => $("msg").textContent = "", 4000); };
+const robotDo = (fn) => { try { fn(); } catch (e) { showErr(e); } };
+
+// ---------- речь ----------
+$("sayBtn").onclick = () => Robert.say($("text").value, {
+  gesture: $("gesture").checked, rate: $("rate").value / 10, volume: $("volume").value / 10});
+$("stopSayBtn").onclick = () => Robert.stopSpeech();
+$("text").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("sayBtn").click();
+});
+
+// ---------- фразы ----------
+const groups = Object.keys(Robert.PHRASES);
+let curGroup = groups[0];
+function renderPhrases() {
+  $("groups").innerHTML = "";
+  groups.forEach((g) => {
+    const b = document.createElement("button");
+    b.textContent = g;
+    b.className = g === curGroup ? "active" : "";
+    b.onclick = () => { curGroup = g; renderPhrases(); };
+    $("groups").appendChild(b);
+  });
+  $("phrases").innerHTML = "";
+  Robert.PHRASES[curGroup].forEach((text) => {
+    const d = document.createElement("div");
+    d.className = "item";
+    d.innerHTML = `<span></span><button title="Произнести"><i class="ti ti-volume"></i></button>`;
+    d.querySelector("span").textContent = text;
+    d.querySelector("button").onclick = () => Robert.say(text, {gesture: $("gesture").checked});
+    $("phrases").appendChild(d);
+  });
+}
+renderPhrases();
+
+// ---------- пульт ----------
+document.querySelectorAll("[data-walk]").forEach((b) => {
+  const action = Robert[b.dataset.walk];
+  b.addEventListener("pointerdown", () => robotDo(() => Robert.walk(action)));
+  b.addEventListener("pointerup", () => robotDo(() => Robert.stop()));
+  b.addEventListener("pointerleave", () => { if (Robert.connected()) Robert.stop(); });
+});
+$("stopBtn").onclick = () => robotDo(() => Robert.stop());
+$("handsBtn").onclick = () => robotDo(() => Robert.hands());
+$("legsBtn").onclick = () => robotDo(() => Robert.legs());
+$("comboBtn").onclick = () => robotDo(() => Robert.combo());
+$("danceBtn").onclick = () => robotDo(() => Robert.dance(10));
+$("speed").onchange = () => Robert.setSpeed(+$("speed").value);
+
+// ---------- глаза ----------
+const EYE_HEX = {1: "#2547C9", 2: "#3FB3E8", 3: "#30A46C", 4: "#F5C400",
+                 5: "#E5484D", 6: "#8E4EC6", 7: "#E9EEF5"};
+let eyeColor = 2;
+for (let n = 1; n <= 7; n++) {
+  const b = document.createElement("button");
+  b.style.background = EYE_HEX[n];
+  b.title = Robert.COLORS[n];
+  b.onclick = () => { eyeColor = n; mark(); robotDo(() => Robert.eyes(n, $("light").checked)); };
+  $("colors").appendChild(b);
+}
+function mark() { [...$("colors").children].forEach((b, i) => b.classList.toggle("active", i + 1 === eyeColor)); }
+mark();
+$("light").onchange = () => robotDo(() => Robert.eyes(eyeColor, $("light").checked));
+
+// ---------- чек-лист ментора ----------
+const CHECKLIST = [
+  ["Перед уроком", [
+    ["charged", "Робот заряжен и включён (кнопка на груди, 5 секунд)"],
+    ["connected", "Вверху написано «Робот подключён»", "auto"],
+    ["voice", "Нажали «Произнести» — голос идёт из динамика робота"],
+    ["model", "Своя модель-пример обучена и проверена на странице Teachable Machine"],
+    ["closed", "Закрыты другие вкладки и программы, занимающие робота или камеру"],
+    ["board", "На доске написан адрес teachablemachine.withgoogle.com"],
+  ]],
+  ["На уроке", [
+    ["greet", "Роберт поприветствовал класс"],
+    ["nothing", "Напомнили командам про класс «Ничего»"],
+    ["break", "Провели «Сломай модель»: команды нашли ошибки чужих моделей"],
+    ["links", "Собраны ссылки на модели всех команд"],
+  ]],
+  ["После урока", [
+    ["bye", "Роберт попрощался с классом"],
+    ["charge", "Робот выключен и поставлен на зарядку"],
+  ]],
+];
+const CHECK_KEY = "mentor_checklist";
+let checks = {};
+try { checks = JSON.parse(localStorage.getItem(CHECK_KEY)) || {}; } catch {}
+let robotConnected = false;
+Robert.onStatus((s) => { robotConnected = s === "connected"; renderChecklist(); });
+
+function saveChecks() { try { localStorage.setItem(CHECK_KEY, JSON.stringify(checks)); } catch {} }
+
+function renderChecklist() {
+  const box = $("checklist"); box.innerHTML = "";
+  let done = 0, total = 0;
+  CHECKLIST.forEach(([group, items]) => {
+    const h = document.createElement("div"); h.className = "check-group"; h.textContent = group;
+    box.appendChild(h);
+    items.forEach(([id, text, auto]) => {
+      const on = auto ? robotConnected : !!checks[id];
+      total++; if (on) done++;
+      const label = document.createElement("label"); label.className = "check" + (on ? " done" : "");
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = on;
+      if (auto) { cb.disabled = true; label.title = "Отмечается автоматически"; }
+      cb.onchange = () => { checks[id] = cb.checked; saveChecks(); renderChecklist(); };
+      const span = document.createElement("span"); span.textContent = text;
+      label.append(cb, span);
+      if (auto) label.insertAdjacentHTML("beforeend", '<i class="ti ti-bolt"></i>');
+      box.appendChild(label);
+    });
+  });
+  $("checkProgress").textContent = `${done} из ${total}`;
+}
+$("resetChecklist").onclick = () => { checks = {}; saveChecks(); renderChecklist(); };
+renderChecklist();
+</script>
+</body>
+</html>
