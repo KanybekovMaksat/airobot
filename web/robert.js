@@ -4,7 +4,8 @@
 const Robert = (() => {
   // ---------- протокол (как в robot_ble.py) ----------
   const SERVICE = 0xffc0, WRITE_CHAR = 0xffc1;
-  const BACKWARD = 1, FORWARD = 2, LEFT = 3, RIGHT = 4, IDLE = 77;
+  // Проверено на роботе: 1 — вперёд, 2 — назад (в старой прошивке считалось наоборот)
+  const FORWARD = 1, BACKWARD = 2, LEFT = 3, RIGHT = 4, IDLE = 77;
   const LIGHT_ON = 0, LIGHT_OFF = 4;
   const range = (a, b) => Array.from({length: b - a + 1}, (_, i) => a + i);
   const COMBO_RANGE = range(1, 93).filter((n) => n !== IDLE);

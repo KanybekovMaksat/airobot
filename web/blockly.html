@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Блоки — Робот Роберт — Codify</title>
+<link rel="icon" href="static/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="static/favicon.png">
+<link rel="apple-touch-icon" href="static/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.48.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="static/codify.css">
+<style>
+  html, body { height: 100%; }
+  /* Общий вертикальный скролл: когда шапка и панель запуска не помещаются
+     (узкий экран, перенос кнопок), страница прокручивается вниз,
+     а не обрезает поле с блоками. */
+  body { display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; }
+  .topbar { flex: 0 0 auto; }
+  .runbar {
+    flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--bg);
+  }
+  .runbar .sep { width: 1px; height: 24px; background: var(--line); margin: 0 4px; }
+  button.flag { background: #17A34A; border-color: #17A34A; color: #fff; font-weight: 600; }
+  button.flag:hover { background: #128A3E; color: #fff; }
+  button.flag.running { background: #FFAB19; border-color: #FFAB19; }
+  button.stopall { color: var(--danger); }
+  /* Поле не сжимается меньше 480px: остаток экрана занимает целиком,
+     а если места нет — появляется общий скролл страницы. */
+  #blocklyDiv { flex: 1 0 auto; min-height: 480px; }
+  .runbar .msg { margin: 0; flex-basis: 100%; }
+  @media (min-width: 900px) { .runbar .msg { flex-basis: auto; flex: 1; } }
+  /* Окно «спросить и ждать» */
+  .ask-overlay {
+    position: fixed; inset: 0; background: rgba(15, 27, 51, .45); z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ask-overlay[hidden] { display: none; }
+  .ask-box {
+    background: var(--bg); border-radius: var(--radius); padding: 24px;
+    width: min(420px, 92vw); box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+  }
+  .ask-box .q { font-size: 17px; font-weight: 600; margin-bottom: 12px; }
+  /* Blockly под шрифт сайта */
+  .blocklyText, .blocklyFlyoutLabelText { font-family: "Onest", system-ui, sans-serif !important; }
+  /* Сайдбар категорий — как в Scratch: кружки-иконки, скруглённая подсветка */
+  .blocklyToolboxDiv {
+    background: var(--bg) !important;
+    border-right: 1px solid var(--line);
+    padding: 8px 6px !important;
+  }
+  .blocklyToolboxCategory { margin: 2px 0; }
+  .blocklyTreeRow {
+    display: flex; align-items: center; gap: 10px;
+    height: auto !important; margin: 0 !important;
+    padding: 8px 12px !important;
+    border-left: none !important; border-radius: 10px;
+    cursor: pointer; transition: background .12s;
+  }
+  .blocklyTreeRow:not(.blocklyTreeSelected):hover { background: #F5F7FB !important; }
+  .blocklyTreeSelected { background: var(--cat, var(--primary)) !important; }
+  .blocklyTreeIcon {
+    visibility: visible !important; opacity: 1 !important;
+    width: 24px !important; height: 24px !important; flex: 0 0 auto;
+    border-radius: 50%; background: var(--cat, #9AA4B2);
+    display: inline-flex !important; align-items: center; justify-content: center;
+    color: #fff; font-size: 13px; background-image: none !important;
+  }
+  .blocklyTreeSelected .blocklyTreeIcon { background: rgba(255, 255, 255, .28); }
+  .blocklyTreeLabel {
+    font-family: "Onest", system-ui, sans-serif !important;
+    font-size: 14px !important; font-weight: 500 !important;
+    color: var(--text) !important; white-space: nowrap;
+  }
+  .blocklyTreeSelected .blocklyTreeLabel { color: #fff !important; font-weight: 600 !important; }
+  .blocklyToolboxDiv::-webkit-scrollbar { width: 6px; }
+  .blocklyToolboxDiv::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><img src="static/codify-logo.png" alt="Codify"><span>Робот Роберт</span></a>
+  <nav class="nav">
+    <a href="index.html"><i class="ti ti-layout-dashboard"></i>Панель</a>
+    <a href="blockly.html" class="active"><i class="ti ti-puzzle"></i>Блоки</a>
+    <a href="tm.html"><i class="ti ti-brain"></i>Teachable Machine</a>
+    <a href="follow.html"><i class="ti ti-focus-2"></i>Следуй за мной</a>
+    <a href="sound.html"><i class="ti ti-microphone"></i>Звуковые команды</a>
+    <a href="chat.html"><i class="ti ti-message-chatbot"></i>Спроси Роберта</a>
+  </nav>
+  <span class="status" id="robotStatus"><span class="dot"></span>…</span>
+  <button id="connectBtn"><i class="ti ti-plug-connected"></i>Подключить робота</button>
+</header>
+
+<div class="runbar">
+  <button class="flag" id="runBtn"><i class="ti ti-flag-filled"></i>Запустить</button>
+  <button class="stopall" id="stopBtn"><i class="ti ti-hand-stop"></i>Остановить</button>
+  <span class="sep"></span>
+  <select id="examples" style="width:auto">
+    <option value="">Примеры…</option>
+    <option value="hello">Привет и танец</option>
+    <option value="arrows">Управление стрелками</option>
+    <option value="traffic">Светофор глазами</option>
+    <option value="counter">Посчитай до пяти</option>
+    <option value="meet">Знакомство с Робертом</option>
+    <option value="melody">Угадай мелодию</option>
+    <option value="disco">Диско-вечеринка</option>
+    <option value="guess">Игра «Угадай число»</option>
+  </select>
+  <button class="ghost" id="saveBtn" title="Сохранить проект в файл — его можно загрузить обратно на любом компьютере"><i class="ti ti-download"></i>Скачать проект</button>
+  <button class="ghost" id="loadBtn" title="Загрузить проект из файла (или просто перетащите файл на страницу)"><i class="ti ti-upload"></i>Загрузить проект</button>
+  <button class="ghost danger" id="clearBtn"><i class="ti ti-trash"></i>Очистить</button>
+  <input type="file" id="loadInput" accept=".json,application/json" hidden>
+  <span class="msg" id="msg"></span>
+  <span class="muted" id="hint">Соберите блоки под «когда 🚩 нажат» и нажмите «Запустить»</span>
+</div>
+
+<div id="blocklyDiv"></div>
+
+<div class="ask-overlay" id="askOverlay" hidden>
+  <div class="ask-box">
+    <div class="q" id="askQuestion"></div>
+    <input type="text" id="askInput" placeholder="Введи ответ…" autocomplete="off">
+    <div class="row"><button class="primary" id="askOk"><i class="ti ti-send"></i>Ответить</button></div>
+  </div>
+</div>
+
+<!-- Модалка Blockly: создание/переименование переменной, подтверждения -->
+<div class="ask-overlay" id="dlgOverlay" hidden>
+  <div class="ask-box">
+    <div class="q" id="dlgTitle"></div>
+    <input type="text" id="dlgInput" placeholder="Например: счёт" autocomplete="off" maxlength="40">
+    <div class="row" style="justify-content:flex-end">
+      <button class="ghost" id="dlgCancel">Отмена</button>
+      <button class="primary" id="dlgOk"><i class="ti ti-check"></i>ОК</button>
+    </div>
+  </div>
+</div>
+
+<!-- Категории блоков — как в Scratch -->
+<xml id="toolbox" style="display:none">
+  <category name="События" colour="#FFBF00">
+    <block type="event_start"></block>
+    <block type="event_key"></block>
+    <block type="event_receive"></block>
+    <block type="event_broadcast">
+      <value name="MSG"><shadow type="text"><field name="TEXT">сообщение1</field></shadow></value>
+    </block>
+    <block type="event_broadcast_wait">
+      <value name="MSG"><shadow type="text"><field name="TEXT">сообщение1</field></shadow></value>
+    </block>
+  </category>
+  <category name="Движение" colour="#4C97FF">
+    <block type="motion_walk_for">
+      <value name="SECS"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+    </block>
+    <block type="motion_walk_on"></block>
+    <block type="motion_stop"></block>
+    <block type="motion_speed"></block>
+  </category>
+  <category name="Внешность" colour="#9966FF">
+    <block type="looks_eyes"></block>
+    <block type="looks_light"></block>
+  </category>
+  <category name="Танцы" colour="#0FBD8C">
+    <block type="dance_random"></block>
+    <block type="dance_number">
+      <value name="NUM"><shadow type="math_number"><field name="NUM">100</field></shadow></value>
+    </block>
+    <block type="dance_for">
+      <value name="SECS"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+    </block>
+  </category>
+  <category name="Звук" colour="#CF63CF">
+    <block type="sound_say">
+      <value name="TEXT"><shadow type="text"><field name="TEXT">Привет! Я Роберт!</field></shadow></value>
+    </block>
+    <block type="sound_say_wait">
+      <value name="TEXT"><shadow type="text"><field name="TEXT">Привет! Я Роберт!</field></shadow></value>
+    </block>
+    <block type="sound_stop_speech"></block>
+    <block type="sound_note">
+      <value name="SECS"><shadow type="math_number"><field name="NUM">0.5</field></shadow></value>
+    </block>
+  </category>
+  <category name="Управление" colour="#FFAB19">
+    <block type="control_wait">
+      <value name="SECS"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+    </block>
+    <block type="controls_repeat_ext">
+      <value name="TIMES"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+    </block>
+    <block type="control_forever"></block>
+    <block type="controls_if"></block>
+    <block type="controls_if"><mutation else="1"></mutation></block>
+    <block type="control_wait_until"></block>
+    <block type="controls_whileUntil"><field name="MODE">UNTIL</field></block>
+    <block type="control_stop"></block>
+  </category>
+  <category name="Сенсоры" colour="#5CB1D6">
+    <block type="sensing_connected"></block>
+    <block type="sensing_keydown"></block>
+    <block type="sensing_ask">
+      <value name="TEXT"><shadow type="text"><field name="TEXT">Как тебя зовут?</field></shadow></value>
+    </block>
+    <block type="sensing_answer"></block>
+    <block type="sensing_timer"></block>
+    <block type="sensing_timer_reset"></block>
+  </category>
+  <category name="Операторы" colour="#59C059">
+    <block type="math_number"><field name="NUM">0</field></block>
+    <block type="math_arithmetic">
+      <value name="A"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+      <value name="B"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+    </block>
+    <block type="math_random_int">
+      <value name="FROM"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+      <value name="TO"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+    </block>
+    <block type="logic_compare">
+      <value name="A"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+      <value name="B"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+    </block>
+    <block type="logic_operation"></block>
+    <block type="logic_negate"></block>
+    <block type="logic_boolean"></block>
+    <block type="text"></block>
+    <block type="text_join"></block>
+    <block type="op_contains">
+      <value name="A"><shadow type="text"><field name="TEXT">яблоко</field></shadow></value>
+      <value name="B"><shadow type="text"><field name="TEXT">я</field></shadow></value>
+    </block>
+    <block type="text_length">
+      <value name="VALUE"><shadow type="text"><field name="TEXT">яблоко</field></shadow></value>
+    </block>
+    <block type="text_charAt">
+      <value name="VALUE"><shadow type="text"><field name="TEXT">яблоко</field></shadow></value>
+    </block>
+    <block type="math_modulo">
+      <value name="DIVIDEND"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+      <value name="DIVISOR"><shadow type="math_number"><field name="NUM">3</field></shadow></value>
+    </block>
+    <block type="math_round">
+      <value name="NUM"><shadow type="math_number"><field name="NUM">3.5</field></shadow></value>
+    </block>
+    <block type="math_single">
+      <value name="NUM"><shadow type="math_number"><field name="NUM">9</field></shadow></value>
+    </block>
+    <block type="math_trig">
+      <value name="NUM"><shadow type="math_number"><field name="NUM">45</field></shadow></value>
+    </block>
+  </category>
+  <category name="Переменные" colour="#FF8C1A" custom="VARIABLE"></category>
+  <category name="Списки" colour="#FF661A">
+    <block type="lists_create_with"><mutation items="3"></mutation></block>
+    <block type="lists_repeat">
+      <value name="NUM"><shadow type="math_number"><field name="NUM">5</field></shadow></value>
+    </block>
+    <block type="lists_length"></block>
+    <block type="lists_isEmpty"></block>
+    <block type="lists_indexOf"></block>
+    <block type="lists_getIndex"></block>
+    <block type="lists_setIndex"></block>
+  </category>
+  <category name="Мои блоки" colour="#FF6680" custom="PROCEDURE"></category>
+</xml>
+
+<script src="https://cdn.jsdelivr.net/npm/blockly@11/blockly_compressed.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/blockly@11/blocks_compressed.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/blockly@11/javascript_compressed.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/blockly@11/msg/ru.js"></script>
+<script src="robert.js"></script>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+if (typeof Blockly === "undefined") {
+  $("msg").textContent = "Не загрузилась библиотека блоков — проверьте интернет и обновите страницу";
+  throw new Error("Blockly не загрузился");
+}
+
+const JS = (typeof javascript !== "undefined" && javascript.javascriptGenerator) || Blockly.JavaScript;
+const Order = (typeof javascript !== "undefined" && javascript.Order) || {ATOMIC: 0, FUNCTION_CALL: 2, NONE: 99};
+
+/* ---------- цвета категорий, как в Scratch ---------- */
+const C = {events: "#FFBF00", motion: "#4C97FF", looks: "#9966FF", dance: "#0FBD8C",
+           sound: "#CF63CF", control: "#FFAB19", sensing: "#5CB1D6", operators: "#59C059"};
+
+const KEYS = [
+  ["пробел", "Space"], ["↑ вверх", "ArrowUp"], ["↓ вниз", "ArrowDown"],
+  ["← влево", "ArrowLeft"], ["→ вправо", "ArrowRight"],
+  ["W", "KeyW"], ["A", "KeyA"], ["S", "KeyS"], ["D", "KeyD"],
+  ["Enter", "Enter"], ["1", "Digit1"], ["2", "Digit2"], ["3", "Digit3"], ["любая", "ANY"],
+];
+
+const NOTES = [
+  ["до", "261.63"], ["ре", "293.66"], ["ми", "329.63"], ["фа", "349.23"],
+  ["соль", "392.00"], ["ля", "440.00"], ["си", "493.88"],
+  ["до²", "523.25"], ["ре²", "587.33"], ["ми²", "659.26"],
+];
+
+/* ---------- блоки Роберта ---------- */
+Blockly.defineBlocksWithJsonArray([
+  // События
+  {type: "event_start", message0: "когда 🚩 нажат", nextStatement: null,
+   colour: C.events, hat: "cap", tooltip: "Запускается кнопкой «Запустить» (зелёный флаг)"},
+  {type: "event_key", message0: "когда клавиша %1 нажата",
+   args0: [{type: "field_dropdown", name: "KEY", options: KEYS}],
+   nextStatement: null, colour: C.events, hat: "cap",
+   tooltip: "Запускается, когда нажали клавишу на клавиатуре"},
+  {type: "event_receive", message0: "когда я получу %1",
+   args0: [{type: "field_input", name: "MSG", text: "сообщение1"}],
+   nextStatement: null, colour: C.events, hat: "cap",
+   tooltip: "Запускается, когда другой скрипт передал такое сообщение"},
+  {type: "event_broadcast", message0: "передать %1",
+   args0: [{type: "input_value", name: "MSG"}],
+   previousStatement: null, nextStatement: null, colour: C.events,
+   tooltip: "Запустить все блоки «когда я получу…» с таким сообщением"},
+  {type: "event_broadcast_wait", message0: "передать %1 и ждать",
+   args0: [{type: "input_value", name: "MSG"}],
+   previousStatement: null, nextStatement: null, colour: C.events,
+   tooltip: "Передать сообщение и подождать, пока получатели закончат"},
+
+  // Движение
+  {type: "motion_walk_for", message0: "идти %1 %2 секунд",
+   args0: [{type: "field_dropdown", name: "DIR", options: [
+     ["вперёд", "FORWARD"], ["назад", "BACKWARD"],
+     ["поворот налево", "LEFT"], ["поворот направо", "RIGHT"]]},
+     {type: "input_value", name: "SECS", check: "Number"}],
+   previousStatement: null, nextStatement: null, colour: C.motion,
+   tooltip: "Робот идёт указанное время и останавливается"},
+  {type: "motion_walk_on", message0: "начать идти %1",
+   args0: [{type: "field_dropdown", name: "DIR", options: [
+     ["вперёд", "FORWARD"], ["назад", "BACKWARD"],
+     ["налево", "LEFT"], ["направо", "RIGHT"]]}],
+   previousStatement: null, nextStatement: null, colour: C.motion,
+   tooltip: "Робот идёт, пока не получит «стоп движения»"},
+  {type: "motion_stop", message0: "стоп движения",
+   previousStatement: null, nextStatement: null, colour: C.motion},
+  {type: "motion_speed", message0: "установить скорость %1",
+   args0: [{type: "field_dropdown", name: "SPEED", options: [
+     ["0 (медленно)", "0"], ["1", "1"], ["2", "2"], ["3 (быстро)", "3"]]}],
+   previousStatement: null, nextStatement: null, colour: C.motion},
+
+  // Внешность
+  {type: "looks_eyes", message0: "сделать глаза %1",
+   args0: [{type: "field_dropdown", name: "COLOR", options: [
+     ["зелёными", "3"], ["голубыми", "2"], ["тёмно-синими", "1"], ["жёлтыми", "4"],
+     ["красными", "5"], ["фиолетовыми", "6"], ["белыми", "7"]]}],
+   previousStatement: null, nextStatement: null, colour: C.looks},
+  {type: "looks_light", message0: "подсветку глаз %1",
+   args0: [{type: "field_dropdown", name: "MODE", options: [["включить", "ON"], ["выключить", "OFF"]]}],
+   previousStatement: null, nextStatement: null, colour: C.looks},
+
+  // Танцы
+  {type: "dance_random", message0: "случайное движение %1",
+   args0: [{type: "field_dropdown", name: "KIND", options: [
+     ["руками", "hands"], ["ногами", "legs"], ["всем телом", "combo"]]}],
+   previousStatement: null, nextStatement: null, colour: C.dance},
+  {type: "dance_number", message0: "движение %1 номер %2",
+   args0: [{type: "field_dropdown", name: "KIND", options: [
+     ["руками", "hands"], ["ногами", "legs"], ["всем телом", "combo"]]},
+     {type: "input_value", name: "NUM", check: "Number"}],
+   previousStatement: null, nextStatement: null, colour: C.dance,
+   tooltip: "Руки: 100–110, ноги: 200–235, всё тело: 1–93"},
+  {type: "dance_for", message0: "танцевать %1 секунд",
+   args0: [{type: "input_value", name: "SECS", check: "Number"}],
+   previousStatement: null, nextStatement: null, colour: C.dance,
+   tooltip: "Случайный танец из разных движений"},
+
+  // Звук
+  {type: "sound_say", message0: "сказать %1",
+   args0: [{type: "input_value", name: "TEXT"}],
+   previousStatement: null, nextStatement: null, colour: C.sound,
+   tooltip: "Роберт говорит и продолжает выполнять следующие блоки"},
+  {type: "sound_say_wait", message0: "сказать %1 и дождаться",
+   args0: [{type: "input_value", name: "TEXT"}],
+   previousStatement: null, nextStatement: null, colour: C.sound,
+   tooltip: "Следующий блок начнётся, когда Роберт договорит"},
+  {type: "sound_stop_speech", message0: "остановить речь",
+   previousStatement: null, nextStatement: null, colour: C.sound},
+  {type: "sound_note", message0: "сыграть ноту %1 %2 секунд",
+   args0: [{type: "field_dropdown", name: "NOTE", options: NOTES},
+     {type: "input_value", name: "SECS", check: "Number"}],
+   previousStatement: null, nextStatement: null, colour: C.sound},
+
+  // Управление
+  {type: "control_wait", message0: "ждать %1 секунд",
+   args0: [{type: "input_value", name: "SECS", check: "Number"}],
+   previousStatement: null, nextStatement: null, colour: C.control},
+  {type: "control_forever", message0: "повторять всегда %1 %2",
+   args0: [{type: "input_dummy"}, {type: "input_statement", name: "DO"}],
+   previousStatement: null, colour: C.control,
+   tooltip: "Повторяется, пока не нажали «Остановить»"},
+  {type: "control_wait_until", message0: "ждать, пока не %1",
+   args0: [{type: "input_value", name: "COND", check: "Boolean"}],
+   previousStatement: null, nextStatement: null, colour: C.control},
+  {type: "control_stop", message0: "остановить %1",
+   args0: [{type: "field_dropdown", name: "WHAT", options: [["всё", "ALL"], ["этот скрипт", "THIS"]]}],
+   previousStatement: null, colour: C.control},
+
+  // Сенсоры
+  {type: "sensing_connected", message0: "робот подключён?", output: "Boolean", colour: C.sensing},
+  {type: "sensing_keydown", message0: "клавиша %1 нажата?",
+   args0: [{type: "field_dropdown", name: "KEY", options: KEYS}],
+   output: "Boolean", colour: C.sensing},
+  {type: "sensing_ask", message0: "спросить %1 и ждать",
+   args0: [{type: "input_value", name: "TEXT"}],
+   previousStatement: null, nextStatement: null, colour: C.sensing,
+   tooltip: "Роберт задаёт вопрос, ответ попадает в блок «ответ»"},
+  {type: "sensing_answer", message0: "ответ", output: null, colour: C.sensing},
+  {type: "sensing_timer", message0: "таймер", output: "Number", colour: C.sensing,
+   tooltip: "Секунды с запуска программы или сброса таймера"},
+  {type: "sensing_timer_reset", message0: "сбросить таймер",
+   previousStatement: null, nextStatement: null, colour: C.sensing},
+
+  // Операторы
+  {type: "op_contains", message0: "%1 содержит %2 ?",
+   args0: [{type: "input_value", name: "A"}, {type: "input_value", name: "B"}],
+   output: "Boolean", colour: C.operators, inputsInline: true},
+]);
+
+/* ---------- генераторы кода ---------- */
+JS.STATEMENT_PREFIX = "await runtime.tick(%1);\n";
+JS.INFINITE_LOOP_TRAP = "await runtime.tick(%1);\n";
+JS.addReservedWords("runtime,bot,Robert");
+
+const val = (b, name, dflt) => JS.valueToCode(b, name, Order.NONE) || dflt;
+
+// События: сами хеты компилируются отдельно, их генераторы пустые
+JS.forBlock["event_start"] = () => "";
+JS.forBlock["event_key"] = () => "";
+JS.forBlock["event_receive"] = () => "";
+JS.forBlock["event_broadcast"] = (b) => `runtime.broadcast(${val(b, "MSG", "''")}, false);\n`;
+JS.forBlock["event_broadcast_wait"] = (b) => `await runtime.broadcast(${val(b, "MSG", "''")}, true);\n`;
+
+// Движение
+JS.forBlock["motion_walk_for"] = (b) =>
+  `await bot.walkFor("${b.getFieldValue("DIR")}", ${val(b, "SECS", "1")});\n`;
+JS.forBlock["motion_walk_on"] = (b) => `bot.walk("${b.getFieldValue("DIR")}");\n`;
+JS.forBlock["motion_stop"] = () => "bot.stop();\n";
+JS.forBlock["motion_speed"] = (b) => `bot.speed(${b.getFieldValue("SPEED")});\n`;
+
+// Внешность
+JS.forBlock["looks_eyes"] = (b) => `bot.eyes(${b.getFieldValue("COLOR")});\n`;
+JS.forBlock["looks_light"] = (b) => `bot.light(${b.getFieldValue("MODE") === "ON"});\n`;
+
+// Танцы
+JS.forBlock["dance_random"] = (b) => `bot.move("${b.getFieldValue("KIND")}", null);\n`;
+JS.forBlock["dance_number"] = (b) =>
+  `bot.move("${b.getFieldValue("KIND")}", ${val(b, "NUM", "100")});\n`;
+JS.forBlock["dance_for"] = (b) => `await bot.dance(${val(b, "SECS", "10")});\n`;
+
+// Звук
+JS.forBlock["sound_say"] = (b) => `bot.say(${val(b, "TEXT", "''")});\n`;
+JS.forBlock["sound_say_wait"] = (b) => `await bot.sayWait(${val(b, "TEXT", "''")});\n`;
+JS.forBlock["sound_stop_speech"] = () => "bot.stopSpeech();\n";
+JS.forBlock["sound_note"] = (b) =>
+  `await bot.note(${b.getFieldValue("NOTE")}, ${val(b, "SECS", "0.5")});\n`;
+
+// Управление
+JS.forBlock["control_wait"] = (b) => `await runtime.sleep(${val(b, "SECS", "1")});\n`;
+JS.forBlock["control_forever"] = (b, g) => {
+  const branch = g.statementToCode(b, "DO");
+  return `while (true) {\n  await runtime.tick(${JSON.stringify(b.id)});\n${branch}}\n`;
+};
+JS.forBlock["control_wait_until"] = (b, g) => {
+  const cond = JS.valueToCode(b, "COND", Order.NONE) || "false";
+  return `while (!(${cond})) {\n  await runtime.tick(${JSON.stringify(b.id)});\n  await runtime.sleep(0.03);\n}\n`;
+};
+JS.forBlock["control_stop"] = (b) =>
+  b.getFieldValue("WHAT") === "ALL"
+    ? "runtime.stopAll();\nthrow runtime.STOP;\n"
+    : "throw runtime.STOP;\n";
+
+// Сенсоры
+JS.forBlock["sensing_connected"] = () => ["Robert.connected()", Order.FUNCTION_CALL];
+JS.forBlock["sensing_keydown"] = (b) =>
+  [`runtime.keyDown("${b.getFieldValue("KEY")}")`, Order.FUNCTION_CALL];
+JS.forBlock["sensing_ask"] = (b) => `await runtime.ask(${val(b, "TEXT", "''")});\n`;
+JS.forBlock["sensing_answer"] = () => ["runtime.answer", Order.ATOMIC];
+JS.forBlock["sensing_timer"] = () => ["runtime.timer()", Order.FUNCTION_CALL];
+JS.forBlock["sensing_timer_reset"] = () => "runtime.resetTimer();\n";
+
+// Операторы
+JS.forBlock["op_contains"] = (b) => {
+  const a = val(b, "A", "''"), c = val(b, "B", "''");
+  return [`String(${a}).toLowerCase().includes(String(${c}).toLowerCase())`, Order.FUNCTION_CALL];
+};
+
+// «Мои блоки»: вызовы процедур делаем асинхронными (внутри них есть await)
+const origCallRet = JS.forBlock["procedures_callreturn"];
+JS.forBlock["procedures_callreturn"] = (b, g) => {
+  const [code] = origCallRet.call(JS, b, g);
+  return [`(await ${code})`, Order.ATOMIC];
+};
+const origCallNo = JS.forBlock["procedures_callnoreturn"];
+JS.forBlock["procedures_callnoreturn"] = (b, g) => {
+  const code = origCallNo.call(JS, b, g);
+  return /^\s*\(?await /.test(code) ? code : "await " + code;
+};
+
+/* ---------- тема: цвета встроенных блоков как в Scratch ---------- */
+const theme = Blockly.Theme.defineTheme("codifyScratch", {
+  base: Blockly.Themes.Zelos,
+  blockStyles: {
+    logic_blocks: {colourPrimary: "#59C059"},
+    loop_blocks: {colourPrimary: "#FFAB19"},
+    math_blocks: {colourPrimary: "#59C059"},
+    text_blocks: {colourPrimary: "#59C059"},
+    list_blocks: {colourPrimary: "#FF661A"},
+    variable_blocks: {colourPrimary: "#FF8C1A"},
+    variable_dynamic_blocks: {colourPrimary: "#FF8C1A"},
+    procedure_blocks: {colourPrimary: "#FF6680"},
+  },
+  fontStyle: {family: '"Onest", system-ui, sans-serif'},
+  componentStyles: {toolboxBackgroundColour: "#F5F7FB", flyoutBackgroundColour: "#EDF3FF",
+                    workspaceBackgroundColour: "#FFFFFF"},
+});
+
+const ws = Blockly.inject("blocklyDiv", {
+  toolbox: document.getElementById("toolbox"),
+  renderer: "zelos",
+  theme,
+  zoom: {controls: true, wheel: true, startScale: 0.8, maxScale: 1.6, minScale: 0.4},
+  move: {scrollbars: true, drag: true, wheel: true},
+  trashcan: true,
+});
+window.addEventListener("resize", () => Blockly.svgResize(ws));
+
+// «если» в Scratch — оранжевый, а не зелёный
+ws.addChangeListener((e) => {
+  if (e.type === Blockly.Events.BLOCK_CREATE) {
+    for (const id of e.ids || []) {
+      const b = ws.getBlockById(id);
+      if (b && (b.type === "controls_if" || b.type === "controls_ifelse")) b.setColour(C.control);
+    }
+  }
+});
+
+/* ---------- сайдбар: цветные кружки с иконками у категорий ---------- */
+const CAT_ICONS = {
+  "События": "ti-bolt", "Движение": "ti-run", "Внешность": "ti-eye",
+  "Танцы": "ti-sparkles", "Звук": "ti-volume", "Управление": "ti-repeat",
+  "Сенсоры": "ti-radar-2", "Операторы": "ti-math-symbols",
+  "Переменные": "ti-variable", "Списки": "ti-list", "Мои блоки": "ti-puzzle",
+};
+function decorateToolbox() {
+  const tb = ws.getToolbox();
+  if (!tb || !tb.getToolboxItems) return 0;
+  let coloured = 0;
+  for (const item of tb.getToolboxItems()) {
+    const div = item.getDiv && item.getDiv();
+    if (!div) continue;
+    const row = div.querySelector(".blocklyTreeRow") || div;
+    // цвет: из API категории, иначе из рамки, которую рисует сам Blockly
+    const colour = (item.getColour && item.getColour()) ||
+                   row.style.borderLeftColor || row.style.borderColor || "";
+    if (colour) { row.style.setProperty("--cat", colour); coloured++; }
+    const icon = row.querySelector(".blocklyTreeIcon");
+    const name = (item.getName && item.getName()) || "";
+    if (icon && CAT_ICONS[name]) icon.classList.add("ti", CAT_ICONS[name]);
+  }
+  return coloured;
+}
+const catColoured = decorateToolbox();
+
+/* ---------- модалка вместо системных prompt/confirm/alert Blockly ----------
+   Blockly зовёт prompt при создании и переименовании переменной, confirm —
+   при удалении используемой переменной, alert — при повторе имени. */
+const dlg = {
+  _done: null,
+  _kind: "prompt",
+  open(kind, message, defaultValue, done) {
+    this._kind = kind;
+    $("dlgTitle").textContent = message;
+    $("dlgInput").hidden = kind !== "prompt";
+    $("dlgCancel").hidden = kind === "alert";
+    $("dlgOverlay").hidden = false;
+    if (kind === "prompt") {
+      $("dlgInput").value = defaultValue || "";
+      $("dlgInput").focus();
+      $("dlgInput").select();
+    } else {
+      $("dlgOk").focus();
+    }
+    this._done = (v) => {
+      $("dlgOverlay").hidden = true;
+      this._done = null;
+      done(v);
+    };
+  },
+  ok() {
+    if (!this._done) return;
+    this._done(this._kind === "prompt" ? $("dlgInput").value
+      : this._kind === "confirm" ? true : undefined);
+  },
+  cancel() {
+    if (!this._done) return;
+    this._done(this._kind === "prompt" ? null
+      : this._kind === "confirm" ? false : undefined);
+  },
+};
+$("dlgOk").onclick = () => dlg.ok();
+$("dlgCancel").onclick = () => dlg.cancel();
+$("dlgOverlay").addEventListener("mousedown", (e) => {
+  if (e.target === $("dlgOverlay")) dlg.cancel();
+});
+$("dlgInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") dlg.ok();
+  else if (e.key === "Escape") dlg.cancel();
+});
+// Escape закрывает модалку и не долетает до скриптов «когда клавиша нажата»
+window.addEventListener("keydown", (e) => {
+  if (!$("dlgOverlay").hidden && e.key === "Escape") {
+    e.stopImmediatePropagation();
+    dlg.cancel();
+  }
+}, true);
+if (Blockly.dialog && Blockly.dialog.setPrompt) {
+  Blockly.dialog.setPrompt((msg, def, cb) => dlg.open("prompt", msg, def, cb));
+  Blockly.dialog.setConfirm((msg, cb) => dlg.open("confirm", msg, "", cb));
+  Blockly.dialog.setAlert((msg, cb) => dlg.open("alert", msg, "", cb || (() => {})));
+}
+
+/* ---------- исполнение ---------- */
+const STOP = Symbol("stop");
+const showMsg = (t) => {
+  $("msg").textContent = t;
+  clearTimeout(showMsg._t);
+  if (t) showMsg._t = setTimeout(() => { $("msg").textContent = ""; }, 6000);
+};
+
+const runtime = {
+  STOP,
+  stopFlag: false,
+  running: 0,
+  ops: 0,
+  keys: new Set(),
+  timerStart: Date.now(),
+  answer: "",
+  eyeColor: 2,
+  lightOn: true,
+  program: null,
+  activeHats: new Set(),
+  askReject: null,
+
+  async tick(id) {
+    if (this.stopFlag) throw STOP;
+    try { ws.highlightBlock(id); } catch {}
+    if (++this.ops > 30) { this.ops = 0; await new Promise((r) => setTimeout(r)); }
+  },
+
+  sleep(secs) {
+    const ms = Math.max(0, Number(secs) * 1000 || 0);
+    return new Promise((resolve, reject) => {
+      const t0 = Date.now();
+      const iv = setInterval(() => {
+        if (this.stopFlag) { clearInterval(iv); reject(STOP); }
+        else if (Date.now() - t0 >= ms) { clearInterval(iv); resolve(); }
+      }, 25);
+    });
+  },
+
+  timer() { return Math.round((Date.now() - this.timerStart) / 100) / 10; },
+  resetTimer() { this.timerStart = Date.now(); },
+  keyDown(k) { return k === "ANY" ? this.keys.size > 0 : this.keys.has(k); },
+
+  ask(question) {
+    const q = String(question);
+    try { Robert.say(q); } catch {}
+    $("askQuestion").textContent = q;
+    $("askInput").value = "";
+    $("askOverlay").hidden = false;
+    $("askInput").focus();
+    return new Promise((resolve, reject) => {
+      this.askReject = reject;
+      $("askOk").onclick = () => {
+        this.answer = $("askInput").value;
+        this.askReject = null;
+        $("askOverlay").hidden = true;
+        resolve();
+      };
+    });
+  },
+
+  broadcast(msg, wait) {
+    const key = String(msg).trim().toLowerCase();
+    const hats = ((this.program && this.program.receive) || [])
+      .filter((h) => h.msg.trim().toLowerCase() === key);
+    const ps = hats.map((h) => runHat(h));
+    return wait ? Promise.all(ps) : Promise.resolve();
+  },
+
+  stopAll() {
+    this.stopFlag = true;
+    try { Robert.stopSpeech(); } catch {}
+    try { if (Robert.connected()) Robert.stop(); } catch {}
+    if (this.askReject) { $("askOverlay").hidden = true; this.askReject(STOP); this.askReject = null; }
+    clearTimeout(this._resetT);
+    this._resetT = setTimeout(() => { this.stopFlag = false; }, 500);
+  },
+};
+
+/* Робот: обёртки над Robert.* — без подключения блоки движения пропускаются */
+const bot = {
+  warned: false,
+  guard(fn) {
+    try { fn(); } catch (e) {
+      if (!this.warned) {
+        this.warned = true;
+        showMsg("Робот не подключён — блоки движения пропускаются, речь работает");
+      }
+    }
+  },
+  async walkFor(dir, secs) {
+    this.guard(() => Robert.walk(Robert[dir]));
+    try { await runtime.sleep(secs); } finally { this.guard(() => Robert.stop()); }
+  },
+  walk(dir) { this.guard(() => Robert.walk(Robert[dir])); },
+  stop() { this.guard(() => Robert.stop()); },
+  speed(n) { Robert.setSpeed(Number(n)); },
+  eyes(n) {
+    runtime.eyeColor = Number(n);
+    this.guard(() => Robert.eyes(runtime.eyeColor, runtime.lightOn));
+  },
+  light(on) {
+    runtime.lightOn = !!on;
+    this.guard(() => Robert.eyes(runtime.eyeColor, runtime.lightOn));
+  },
+  move(kind, n) {
+    if (n == null) { this.guard(() => Robert[kind]()); return; }
+    const ranges = {hands: [100, 110], legs: [200, 235], combo: [1, 93]};
+    const [lo, hi] = ranges[kind];
+    let num = Math.max(lo, Math.min(hi, Math.round(Number(n) || lo)));
+    if (kind === "combo" && num === 77) num = 78;  // 77 — это «стоп»
+    this.guard(() => Robert[kind](num));
+  },
+  async dance(secs) {
+    const end = Date.now() + Math.max(0, Number(secs) * 1000 || 0);
+    try {
+      while (Date.now() < end) {
+        this.guard(() => [Robert.hands, Robert.legs, Robert.combo][Math.floor(Math.random() * 3)]());
+        await runtime.sleep(Math.min(2, (end - Date.now()) / 1000));
+      }
+    } finally { this.guard(() => Robert.stop()); }
+  },
+  say(text) { try { Robert.say(String(text)); } catch {} },
+  async sayWait(text) { await Robert.say(String(text)); },
+  stopSpeech() { try { Robert.stopSpeech(); } catch {} },
+  _audio: null,
+  async note(freq, secs) {
+    try {
+      this._audio = this._audio || new (window.AudioContext || window.webkitAudioContext)();
+      if (this._audio.state === "suspended") await this._audio.resume();
+      const osc = this._audio.createOscillator(), gain = this._audio.createGain();
+      osc.type = "triangle"; osc.frequency.value = Number(freq);
+      gain.gain.value = 0.25;
+      osc.connect(gain); gain.connect(this._audio.destination);
+      osc.start();
+      try { await runtime.sleep(Math.max(0.05, Number(secs) || 0.5)); }
+      finally {
+        gain.gain.setTargetAtTime(0, this._audio.currentTime, 0.02);
+        osc.stop(this._audio.currentTime + 0.1);
+      }
+    } catch (e) { if (e === STOP) throw e; }
+  },
+};
+
+/* ---------- компиляция: хеты → асинхронные скрипты ---------- */
+function compile() {
+  JS.init(ws);
+  const tops = ws.getTopBlocks(true);
+  const start = [], key = [], receive = [];
+
+  // сначала «Мои блоки» — их определения попадают в defs
+  for (const t of tops)
+    if (t.type === "procedures_defnoreturn" || t.type === "procedures_defreturn")
+      JS.blockToCode(t);
+
+  for (const t of tops) {
+    if (t.type.startsWith("procedures_def")) continue;
+    if (t.outputConnection) continue;             // одинокий блок-значение
+    if (t.isEnabled && !t.isEnabled()) continue;  // выключенный блок
+    if (t.type === "event_start" || t.type === "event_key" || t.type === "event_receive") {
+      const next = t.getNextBlock();
+      const body = next ? JS.blockToCode(next) : "";
+      if (t.type === "event_start") start.push(body);
+      else if (t.type === "event_key")
+        key.push({id: t.id, key: t.getFieldValue("KEY"), body});
+      else receive.push({id: t.id, msg: String(t.getFieldValue("MSG") || ""), body});
+    } else if (t.previousConnection) {
+      start.push(JS.blockToCode(t));  // стопка без шляпки — тоже запускается флагом
+    }
+  }
+
+  // имена процедур — чтобы сделать их async в готовом коде
+  const procNames = [];
+  try {
+    const NT = (Blockly.Names && Blockly.Names.NameType && Blockly.Names.NameType.PROCEDURE) || "PROCEDURE";
+    for (const t of tops)
+      if (t.type === "procedures_defnoreturn" || t.type === "procedures_defreturn")
+        procNames.push(JS.nameDB_.getName(t.getFieldValue("NAME"), NT));
+  } catch (e) {}
+
+  let defs = JS.finish("");
+  for (const name of procNames) {
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    defs = defs.replace(new RegExp("^function " + esc + "\\(", "m"), "async function " + name + "(");
+  }
+
+  const script = (body) => "async () => {\n" + body + "}";
+  const src = defs + "\n" +
+    "return {\n" +
+    " start: [" + start.map(script).join(",\n") + "],\n" +
+    " key: [" + key.map((h) =>
+      `{id:${JSON.stringify(h.id)}, key:${JSON.stringify(h.key)}, fn: ${script(h.body)}}`).join(",\n") + "],\n" +
+    " receive: [" + receive.map((h) =>
+      `{id:${JSON.stringify(h.id)}, msg:${JSON.stringify(h.msg)}, fn: ${script(h.body)}}`).join(",\n") + "],\n" +
+    "};";
+  return new Function("runtime", "bot", "Robert", src)(runtime, bot, Robert);
+}
+
+let compileErr = "";
+function recompile() {
+  try {
+    runtime.program = compile();
+    compileErr = "";
+  } catch (e) {
+    runtime.program = null;
+    compileErr = "Не получилось собрать программу: " + (e.message || e);
+    console.error(e);
+  }
+}
+
+/* ---------- запуск скриптов ---------- */
+function updateRunUI() {
+  $("runBtn").classList.toggle("running", runtime.running > 0);
+  $("runBtn").innerHTML = runtime.running > 0
+    ? '<i class="ti ti-loader-2"></i>Работает…'
+    : '<i class="ti ti-flag-filled"></i>Запустить';
+}
+
+async function runScript(fn) {
+  runtime.running++;
+  updateRunUI();
+  try { await fn(); }
+  catch (e) {
+    if (e !== STOP) {
+      console.error(e);
+      showMsg("Ошибка в программе: " + (e.message || e));
+    }
+  } finally {
+    runtime.running--;
+    updateRunUI();
+    if (runtime.running === 0) { try { ws.highlightBlock(null); } catch {} }
+  }
+}
+
+function runHat(h) {
+  if (runtime.activeHats.has(h.id)) return Promise.resolve();
+  runtime.activeHats.add(h.id);
+  return runScript(h.fn).finally(() => runtime.activeHats.delete(h.id));
+}
+
+$("runBtn").onclick = () => {
+  runtime.stopAll();
+  setTimeout(() => {
+    runtime.stopFlag = false;
+    recompile();
+    if (!runtime.program) { showMsg(compileErr); return; }
+    runtime.timerStart = Date.now();
+    runtime.answer = "";
+    bot.warned = false;
+    if (!runtime.program.start.length && !runtime.program.key.length) {
+      showMsg("Соберите блоки под «когда 🚩 нажат» — они в категории «События»");
+      return;
+    }
+    if (!runtime.program.start.length) {
+      showMsg("Скрипты с клавишами готовы — нажимайте клавиши!");
+    }
+    runtime.program.start.forEach((fn) => runScript(fn));
+  }, 550);
+};
+$("stopBtn").onclick = () => runtime.stopAll();
+
+/* ---------- клавиатура ---------- */
+window.addEventListener("keydown", (e) => {
+  if (!$("dlgOverlay").hidden) return;  // открыта модалка переменной — клавиши не для скриптов
+  if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) {
+    if (e.target.id === "askInput" && e.key === "Enter") $("askOk").click();
+    return;
+  }
+  runtime.keys.add(e.code);
+  if (e.repeat) return;
+  const p = runtime.program;
+  if (!p) return;
+  for (const h of p.key)
+    if (h.key === "ANY" || h.key === e.code) runHat(h);
+});
+window.addEventListener("keyup", (e) => runtime.keys.delete(e.code));
+window.addEventListener("blur", () => runtime.keys.clear());
+
+/* ---------- сохранение ---------- */
+const SAVE_KEY = "robert_blockly_workspace";
+const SELFTEST = location.hash === "#selftest";
+let saveT = null;
+ws.addChangeListener((e) => {
+  if (e.isUiEvent || SELFTEST) return;
+  clearTimeout(saveT);
+  saveT = setTimeout(() => {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(Blockly.serialization.workspaces.save(ws)));
+    } catch {}
+    recompile();  // чтобы «когда клавиша нажата» работала сразу, без флага
+  }, 400);
+});
+
+$("saveBtn").onclick = () => {
+  const data = JSON.stringify(Blockly.serialization.workspaces.save(ws), null, 2);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([data], {type: "application/json"}));
+  const d = new Date();
+  a.download = `робот-роберт-проект-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showMsg("Проект сохранён в «Загрузки» — файл можно загрузить обратно на любом компьютере");
+};
+
+async function loadProjectFile(file) {
+  try {
+    const data = JSON.parse(await file.text());
+    if (!data || typeof data !== "object" || !data.blocks)
+      throw new Error("это не файл проекта Роберта (нужен файл, скачанный кнопкой «Скачать проект»)");
+    Blockly.serialization.workspaces.load(data, ws);
+    recompile();
+    showMsg("Проект «" + file.name + "» загружен");
+  } catch (e) { showMsg("Не получилось загрузить: " + (e.message || e)); }
+}
+$("loadBtn").onclick = () => $("loadInput").click();
+$("loadInput").onchange = () => {
+  if ($("loadInput").files[0]) loadProjectFile($("loadInput").files[0]);
+  $("loadInput").value = "";
+};
+
+// Файл проекта можно просто перетащить на страницу
+window.addEventListener("dragover", (e) => { e.preventDefault(); });
+window.addEventListener("drop", (e) => {
+  const f = [...(e.dataTransfer?.files || [])].find((f) => f.name.endsWith(".json"));
+  if (!f) return;
+  e.preventDefault();
+  if (!ws.getTopBlocks(false).length || confirm("Заменить блоки на поле проектом из файла «" + f.name + "»?"))
+    loadProjectFile(f);
+});
+$("clearBtn").onclick = () => {
+  if (confirm("Удалить все блоки с поля?")) { ws.clear(); recompile(); }
+};
+
+/* ---------- примеры ---------- */
+const EXAMPLES = {
+  hello: `<xml xmlns="https://developers.google.com/blockly/xml">
+    <block type="event_start" x="40" y="40"><next>
+      <block type="looks_eyes"><field name="COLOR">3</field><next>
+        <block type="sound_say_wait">
+          <value name="TEXT"><shadow type="text"><field name="TEXT">Привет! Я робот Роберт. Смотрите, как я танцую!</field></shadow></value>
+          <next><block type="dance_for">
+            <value name="SECS"><shadow type="math_number"><field name="NUM">6</field></shadow></value>
+            <next><block type="looks_eyes"><field name="COLOR">4</field><next>
+              <block type="sound_say">
+                <value name="TEXT"><shadow type="text"><field name="TEXT">Ну как вам?</field></shadow></value>
+              </block></next></block></next>
+          </block></next>
+        </block></next>
+      </block></next>
+    </block></xml>`,
+  arrows: `<xml xmlns="https://developers.google.com/blockly/xml">
+    <block type="event_start" x="40" y="40"><next>
+      <block type="sound_say">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">Управляй мной стрелками! Пробел — танец.</field></shadow></value>
+      </block></next></block>
+    <block type="event_key" x="40" y="200"><field name="KEY">ArrowUp</field><next>
+      <block type="motion_walk_for"><field name="DIR">FORWARD</field>
+        <value name="SECS"><shadow type="math_number"><field name="NUM">0.6</field></shadow></value>
+      </block></next></block>
+    <block type="event_key" x="40" y="330"><field name="KEY">ArrowDown</field><next>
+      <block type="motion_walk_for"><field name="DIR">BACKWARD</field>
+        <value name="SECS"><shadow type="math_number"><field name="NUM">0.6</field></shadow></value>
+      </block></next></block>
+    <block type="event_key" x="330" y="200"><field name="KEY">ArrowLeft</field><next>
+      <block type="motion_walk_for"><field name="DIR">LEFT</field>
+        <value name="SECS"><shadow type="math_number"><field name="NUM">0.4</field></shadow></value>
+      </block></next></block>
+    <block type="event_key" x="330" y="330"><field name="KEY">ArrowRight</field><next>
+      <block type="motion_walk_for"><field name="DIR">RIGHT</field>
+        <value name="SECS"><shadow type="math_number"><field name="NUM">0.4</field></shadow></value>
+      </block></next></block>
+    <block type="event_key" x="620" y="200"><field name="KEY">Space</field><next>
+      <block type="dance_for">
+        <value name="SECS"><shadow type="math_number"><field name="NUM">4</field></shadow></value>
+      </block></next></block></xml>`,
+  traffic: `<xml xmlns="https://developers.google.com/blockly/xml">
+    <block type="event_start" x="40" y="40"><next>
+      <block type="control_forever"><statement name="DO">
+        <block type="looks_eyes"><field name="COLOR">5</field><next>
+          <block type="control_wait">
+            <value name="SECS"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+            <next><block type="looks_eyes"><field name="COLOR">4</field><next>
+              <block type="control_wait">
+                <value name="SECS"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+                <next><block type="looks_eyes"><field name="COLOR">3</field><next>
+                  <block type="control_wait">
+                    <value name="SECS"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+                  </block></next></block></next>
+              </block></next></block></next>
+          </block></next>
+        </block>
+      </statement></block></next>
+    </block></xml>`,
+  counter: `<xml xmlns="https://developers.google.com/blockly/xml">
+    <block type="event_start" x="40" y="40"><next>
+      <block type="looks_eyes"><field name="COLOR">2</field><next>
+        <block type="variables_set"><field name="VAR">счёт</field>
+          <value name="VALUE"><block type="math_number"><field name="NUM">0</field></block></value>
+          <next><block type="controls_repeat_ext">
+            <value name="TIMES"><shadow type="math_number"><field name="NUM">5</field></shadow></value>
+            <statement name="DO">
+              <block type="math_change"><field name="VAR">счёт</field>
+                <value name="DELTA"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+                <next><block type="sound_say_wait">
+                  <value name="TEXT"><block type="variables_get"><field name="VAR">счёт</field></block></value>
+                  <next><block type="dance_random"><field name="KIND">hands</field></block></next>
+                </block></next>
+              </block>
+            </statement>
+            <next><block type="looks_eyes"><field name="COLOR">3</field><next>
+              <block type="sound_say">
+                <value name="TEXT"><shadow type="text"><field name="TEXT">Я посчитал до пяти! Научите меня считать до десяти?</field></shadow></value>
+              </block></next></block></next>
+          </block></next>
+        </block></next>
+      </block></next>
+    </block></xml>`,
+  meet: `<xml xmlns="https://developers.google.com/blockly/xml">
+    <block type="event_start" x="40" y="40"><next>
+      <block type="sensing_ask">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">Привет! Как тебя зовут?</field></shadow></value>
+        <next><block type="looks_eyes"><field name="COLOR">4</field><next>
+          <block type="sound_say_wait">
+            <value name="TEXT"><block type="text_join"><mutation items="2"></mutation>
+              <value name="ADD0"><block type="text"><field name="TEXT">Очень приятно, </field></block></value>
+              <value name="ADD1"><block type="sensing_answer"></block></value>
+            </block></value>
+            <next><block type="sensing_ask">
+              <value name="TEXT"><shadow type="text"><field name="TEXT">Сколько тебе лет?</field></shadow></value>
+              <next><block type="sound_say_wait">
+                <value name="TEXT"><block type="text_join"><mutation items="2"></mutation>
+                  <value name="ADD0"><block type="sensing_answer"></block></value>
+                  <value name="ADD1"><block type="text"><field name="TEXT"> — отличный возраст, чтобы учить роботов! Потанцуем?</field></block></value>
+                </block></value>
+                <next><block type="dance_for">
+                  <value name="SECS"><shadow type="math_number"><field name="NUM">4</field></shadow></value>
+                </block></next>
+              </block></next>
+            </block></next>
+          </block></next>
+        </block></next>
+      </block></next>
+    </block></xml>`,
+  melody: `<xml xmlns="https://developers.google.com/blockly/xml">
+    <block type="event_start" x="40" y="40"><next>
+      <block type="sound_say_wait">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">Угадайте песенку!</field></shadow></value>
+        <next><block type="sound_note"><field name="NOTE">329.63</field>
+          <value name="SECS"><shadow type="math_number"><field name="NUM">0.3</field></shadow></value>
+          <next><block type="sound_note"><field name="NOTE">329.63</field>
+            <value name="SECS"><shadow type="math_number"><field name="NUM">0.3</field></shadow></value>
+            <next><block type="sound_note"><field name="NOTE">329.63</field>
+              <value name="SECS"><shadow type="math_number"><field name="NUM">0.6</field></shadow></value>
+              <next><block type="sound_note"><field name="NOTE">329.63</field>
+                <value name="SECS"><shadow type="math_number"><field name="NUM">0.3</field></shadow></value>
+                <next><block type="sound_note"><field name="NOTE">329.63</field>
+                  <value name="SECS"><shadow type="math_number"><field name="NUM">0.3</field></shadow></value>
+                  <next><block type="sound_note"><field name="NOTE">329.63</field>
+                    <value name="SECS"><shadow type="math_number"><field name="NUM">0.6</field></shadow></value>
+                    <next><block type="sound_note"><field name="NOTE">329.63</field>
+                      <value name="SECS"><shadow type="math_number"><field name="NUM">0.3</field></shadow></value>
+                      <next><block type="sound_note"><field name="NOTE">392.00</field>
+                        <value name="SECS"><shadow type="math_number"><field name="NUM">0.3</field></shadow></value>
+                        <next><block type="sound_note"><field name="NOTE">261.63</field>
+                          <value name="SECS"><shadow type="math_number"><field name="NUM">0.3</field></shadow></value>
+                          <next><block type="sound_note"><field name="NOTE">293.66</field>
+                            <value name="SECS"><shadow type="math_number"><field name="NUM">0.3</field></shadow></value>
+                            <next><block type="sound_note"><field name="NOTE">329.63</field>
+                              <value name="SECS"><shadow type="math_number"><field name="NUM">0.8</field></shadow></value>
+                              <next><block type="sensing_ask">
+                                <value name="TEXT"><shadow type="text"><field name="TEXT">Что это за песня?</field></shadow></value>
+                                <next><block type="sound_say">
+                                  <value name="TEXT"><shadow type="text"><field name="TEXT">Это Джингл белс! Если угадали — вы молодцы!</field></shadow></value>
+                                </block></next>
+                              </block></next>
+                            </block></next>
+                          </block></next>
+                        </block></next>
+                      </block></next>
+                    </block></next>
+                  </block></next>
+                </block></next>
+              </block></next>
+            </block></next>
+          </block></next>
+        </block></next>
+      </block></next>
+    </block></xml>`,
+  disco: `<xml xmlns="https://developers.google.com/blockly/xml">
+    <block type="event_start" x="40" y="40"><next>
+      <block type="sound_say">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">Диско-вечеринка! Нажмите «Остановить», когда устанете.</field></shadow></value>
+        <next><block type="control_forever"><statement name="DO">
+          <block type="looks_eyes"><field name="COLOR">6</field><next>
+            <block type="dance_random"><field name="KIND">combo</field><next>
+              <block type="sound_note"><field name="NOTE">440.00</field>
+                <value name="SECS"><shadow type="math_number"><field name="NUM">0.2</field></shadow></value>
+                <next><block type="control_wait">
+                  <value name="SECS"><shadow type="math_number"><field name="NUM">0.8</field></shadow></value>
+                  <next><block type="looks_eyes"><field name="COLOR">2</field><next>
+                    <block type="dance_random"><field name="KIND">hands</field><next>
+                      <block type="sound_note"><field name="NOTE">523.25</field>
+                        <value name="SECS"><shadow type="math_number"><field name="NUM">0.2</field></shadow></value>
+                        <next><block type="control_wait">
+                          <value name="SECS"><shadow type="math_number"><field name="NUM">0.8</field></shadow></value>
+                        </block></next>
+                      </block></next>
+                    </block></next>
+                  </block></next>
+                </block></next>
+              </block></next>
+            </block></next>
+          </block>
+        </statement></block></next>
+      </block></next>
+    </block></xml>`,
+  guess: `<xml xmlns="https://developers.google.com/blockly/xml">
+    <block type="event_start" x="40" y="40"><next>
+      <block type="variables_set"><field name="VAR">число</field>
+        <value name="VALUE"><block type="math_random_int">
+          <value name="FROM"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+          <value name="TO"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+        </block></value>
+        <next><block type="sound_say_wait">
+          <value name="TEXT"><shadow type="text"><field name="TEXT">Я загадал число от одного до десяти. Попробуй угадать!</field></shadow></value>
+          <next><block type="controls_whileUntil"><field name="MODE">UNTIL</field>
+            <value name="BOOL"><block type="logic_compare"><field name="OP">EQ</field>
+              <value name="A"><block type="sensing_answer"></block></value>
+              <value name="B"><block type="variables_get"><field name="VAR">число</field></block></value>
+            </block></value>
+            <statement name="DO">
+              <block type="sensing_ask">
+                <value name="TEXT"><shadow type="text"><field name="TEXT">Какое число я загадал?</field></shadow></value>
+                <next><block type="controls_if"><mutation elseif="1"></mutation>
+                  <value name="IF0"><block type="logic_compare"><field name="OP">GT</field>
+                    <value name="A"><block type="sensing_answer"></block></value>
+                    <value name="B"><block type="variables_get"><field name="VAR">число</field></block></value>
+                  </block></value>
+                  <statement name="DO0">
+                    <block type="looks_eyes"><field name="COLOR">5</field><next>
+                      <block type="sound_say_wait">
+                        <value name="TEXT"><shadow type="text"><field name="TEXT">Моё число меньше!</field></shadow></value>
+                      </block></next></block>
+                  </statement>
+                  <value name="IF1"><block type="logic_compare"><field name="OP">LT</field>
+                    <value name="A"><block type="sensing_answer"></block></value>
+                    <value name="B"><block type="variables_get"><field name="VAR">число</field></block></value>
+                  </block></value>
+                  <statement name="DO1">
+                    <block type="looks_eyes"><field name="COLOR">4</field><next>
+                      <block type="sound_say_wait">
+                        <value name="TEXT"><shadow type="text"><field name="TEXT">Моё число больше!</field></shadow></value>
+                      </block></next></block>
+                  </statement>
+                </block></next>
+              </block>
+            </statement>
+            <next><block type="looks_eyes"><field name="COLOR">3</field><next>
+              <block type="sound_say_wait">
+                <value name="TEXT"><shadow type="text"><field name="TEXT">Ура! Ты угадал! Танцую в твою честь!</field></shadow></value>
+                <next><block type="dance_for">
+                  <value name="SECS"><shadow type="math_number"><field name="NUM">4</field></shadow></value>
+                </block></next>
+              </block></next></block></next>
+          </block></next>
+        </block></next>
+      </block></next>
+    </block></xml>`,
+};
+
+function loadXml(xmlText) {
+  const toDom = (Blockly.utils.xml && Blockly.utils.xml.textToDom) || Blockly.Xml.textToDom;
+  ws.clear();
+  Blockly.Xml.domToWorkspace(toDom(xmlText), ws);
+  recompile();
+}
+
+$("examples").onchange = () => {
+  const k = $("examples").value;
+  $("examples").value = "";
+  if (!k) return;
+  if (ws.getTopBlocks(false).length &&
+      !confirm("Заменить блоки на поле этим примером?")) return;
+  loadXml(EXAMPLES[k]);
+};
+
+/* ---------- старт: восстановить сохранённое или показать пример ---------- */
+(() => {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch {}
+  if (saved && saved.blocks && saved.blocks.blocks && saved.blocks.blocks.length) {
+    try { Blockly.serialization.workspaces.load(saved, ws); } catch { loadXml(EXAMPLES.hello); }
+  } else {
+    loadXml(EXAMPLES.hello);
+  }
+  recompile();
+})();
+
+/* ---------- самотест (открыть blockly.html#selftest): компиляция всех примеров
+   и программы с переменными, циклами, условиями, списками и «Моими блоками» ---------- */
+if (SELFTEST) {
+  const TEST_XML = `<xml xmlns="https://developers.google.com/blockly/xml">
+    <block type="procedures_defnoreturn" x="700" y="40">
+      <field name="NAME">шаг с миганием</field>
+      <statement name="STACK">
+        <block type="motion_walk_for"><field name="DIR">FORWARD</field>
+          <value name="SECS"><shadow type="math_number"><field name="NUM">0.5</field></shadow></value>
+          <next><block type="looks_eyes"><field name="COLOR">5</field></block></next>
+        </block>
+      </statement>
+    </block>
+    <block type="event_start" x="40" y="40"><next>
+      <block type="variables_set"><field name="VAR">счёт</field>
+        <value name="VALUE"><block type="math_number"><field name="NUM">0</field></block></value>
+        <next><block type="controls_repeat_ext">
+          <value name="TIMES"><shadow type="math_number"><field name="NUM">3</field></shadow></value>
+          <statement name="DO">
+            <block type="math_change"><field name="VAR">счёт</field>
+              <value name="DELTA"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+              <next><block type="procedures_callnoreturn"><mutation name="шаг с миганием"></mutation>
+                <next><block type="controls_if"><mutation else="1"></mutation>
+                  <value name="IF0"><block type="logic_compare"><field name="OP">GT</field>
+                    <value name="A"><block type="variables_get"><field name="VAR">счёт</field></block></value>
+                    <value name="B"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+                  </block></value>
+                  <statement name="DO0"><block type="sound_say">
+                    <value name="TEXT"><block type="text_join"><mutation items="2"></mutation>
+                      <value name="ADD0"><block type="text"><field name="TEXT">Шаг номер </field></block></value>
+                      <value name="ADD1"><block type="variables_get"><field name="VAR">счёт</field></block></value>
+                    </block></value>
+                  </block></statement>
+                  <statement name="ELSE"><block type="event_broadcast">
+                    <value name="MSG"><shadow type="text"><field name="TEXT">старт</field></shadow></value>
+                  </block></statement>
+                </block></next>
+              </block></next>
+            </block>
+          </statement>
+          <next><block type="control_wait_until">
+            <value name="COND"><block type="op_contains">
+              <value name="A"><shadow type="text"><field name="TEXT">яблоко</field></shadow></value>
+              <value name="B"><shadow type="text"><field name="TEXT">я</field></shadow></value>
+            </block></value>
+            <next><block type="variables_set"><field name="VAR">фрукты</field>
+              <value name="VALUE"><block type="lists_create_with"><mutation items="2"></mutation>
+                <value name="ADD0"><block type="text"><field name="TEXT">яблоко</field></block></value>
+                <value name="ADD1"><block type="text"><field name="TEXT">груша</field></block></value>
+              </block></value>
+              <next><block type="sensing_timer_reset"></block></next>
+            </block></next>
+          </block></next>
+        </block></next>
+      </block></next>
+    </block>
+    <block type="event_receive" x="40" y="700"><field name="MSG">старт</field><next>
+      <block type="sound_note"><field name="NOTE">440.00</field>
+        <value name="SECS"><shadow type="math_number"><field name="NUM">0.2</field></shadow></value>
+      </block></next>
+    </block>
+    <block type="event_key" x="400" y="700"><field name="KEY">Space</field><next>
+      <block type="control_stop"><field name="WHAT">ALL</field></block></next>
+    </block></xml>`;
+  let ok = true, detail = [];
+  const missing = [...document.querySelectorAll("#toolbox block")]
+    .map((b) => b.getAttribute("type"))
+    .filter((t) => !Blockly.Blocks[t]);
+  if (missing.length) { ok = false; detail.push("нет блоков: " + missing.join(", ")); }
+  for (const [name, xml] of Object.entries({...EXAMPLES, test: TEST_XML})) {
+    try {
+      loadXml(xml);
+      if (!runtime.program) { ok = false; detail.push(name + ": " + compileErr); continue; }
+      const p = runtime.program;
+      detail.push(`${name}: start=${p.start.length} key=${p.key.length} receive=${p.receive.length}`);
+    } catch (e) { ok = false; detail.push(name + ": " + (e.message || e)); }
+  }
+  detail.push("cats=" + catColoured);
+  document.title = (ok ? "SELFTEST-OK | " : "SELFTEST-FAIL | ") + detail.join(" | ");
+  // выполнение: «светофор» крутится 0.4 с и останавливается
+  (async () => {
+    try {
+      loadXml(EXAMPLES.traffic);
+      const run = runScript(runtime.program.start[0]);
+      await new Promise((r) => setTimeout(r, 400));
+      runtime.stopAll();
+      await run;
+      const m = $("msg").textContent;
+      document.title += m.startsWith("Ошибка") ? " | exec-fail: " + m : " | exec-ok";
+    } catch (e) { document.title += " | exec-fail: " + (e.message || e); }
+  })();
+}
+</script>
+</body>
+</html>
