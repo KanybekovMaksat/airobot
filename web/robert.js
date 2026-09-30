@@ -64,17 +64,29 @@ const Robert = (() => {
     }
   }
 
-  // Связь оборвалась сама (робот далеко, помехи) — тихо переподключаемся
-  async function onDropped() {
-    writeChar = null; notify();
-    if (!wantConnected) return;
-    connecting = true; notify();
-    for (let i = 0; i < 5 && wantConnected && device; i++) {
-      await new Promise((r) => setTimeout(r, 1000 + i * 1000));
-      try { await attach(); break; } catch {}
+  // Связь оборвалась сама (помехи, фоновая вкладка, робот занят звуком) —
+  // переподключаемся, пока ментор не нажал «Отключить» или робот не выключился
+  let reconnecting = false;
+  async function tryReattach() {
+    if (reconnecting || !wantConnected || !device || connected()) return;
+    reconnecting = true; connecting = true; notify();
+    for (let i = 0; wantConnected && device && !connected(); i++) {
+      try { await attach(); lastWrite = Date.now(); break; } catch {}
+      // первые попытки — сразу, дальше — раз в 5 секунд, не сдаёмся
+      await new Promise((r) => setTimeout(r, Math.min(5000, 1000 + i * 1000)));
     }
-    connecting = false; notify();
+    reconnecting = false; connecting = false; notify();
   }
+
+  function onDropped() {
+    writeChar = null; notify();
+    tryReattach();
+  }
+
+  // Вкладка вернулась на передний план — фоновые таймеры Chrome спали, проверяем связь
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) tryReattach();
+  });
 
   function disconnect() {
     wantConnected = false;
@@ -85,13 +97,16 @@ const Robert = (() => {
     writeChar = null; notify();
   }
 
-  // «Пульс»: робот сам выключается через ~8 минут без команд, поэтому раз в полторы
-  // минуты тишины шлём безобидный «стоп», чтобы он не засыпал
+  // «Пульс» и сторож: робот засыпает через ~8 минут без команд — в тишине шлём
+  // безобидный «стоп»; а если связь порвалась незаметно — пробуем переподключиться.
+  // Интервал с запасом: в фоновой вкладке Chrome будит таймеры не чаще раза в минуту.
   setInterval(() => {
-    if (connected() && Date.now() - lastWrite > 90000) {
-      try { send(IDLE); } catch {}
+    if (connected()) {
+      if (Date.now() - lastWrite > 60000) { try { send(IDLE); } catch {} }
+    } else {
+      tryReattach();
     }
-  }, 30000);
+  }, 15000);
 
   // Записи по одной: BLE не любит параллельные операции
   function send(action, param = 8) {
