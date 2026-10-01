@@ -85,6 +85,7 @@
   <a class="brand" href="index.html"><img src="static/codify-logo.png" alt="Codify"><span>Робот Роберт</span></a>
   <nav class="nav">
     <a href="index.html"><i class="ti ti-layout-dashboard"></i>Панель</a>
+    <a href="diagnostika.html"><i class="ti ti-clipboard-check"></i>Диагностика</a>
     <a href="blockly.html" class="active"><i class="ti ti-puzzle"></i>Блоки</a>
     <a href="tm.html"><i class="ti ti-brain"></i>Teachable Machine</a>
     <a href="follow.html"><i class="ti ti-focus-2"></i>Следуй за мной</a>
@@ -109,6 +110,8 @@
     <option value="melody">Угадай мелодию</option>
     <option value="disco">Диско-вечеринка</option>
     <option value="guess">Игра «Угадай число»</option>
+    <option value="diag_clean">Диагностика: чистая программа</option>
+    <option value="diag_bug">Диагностика: найди ошибку</option>
   </select>
   <button class="ghost" id="saveBtn" title="Сохранить проект в файл — его можно загрузить обратно на любом компьютере"><i class="ti ti-download"></i>Скачать проект</button>
   <button class="ghost" id="loadBtn" title="Загрузить проект из файла (или просто перетащите файл на страницу)"><i class="ti ti-upload"></i>Загрузить проект</button>
@@ -1194,6 +1197,30 @@ const EXAMPLES = {
         </block></next>
       </block></next>
     </block></xml>`,
+  diag_clean: `<xml xmlns="https://developers.google.com/blockly/xml">
+    <block type="event_start" x="40" y="40"><next>
+      <block type="sound_say_wait">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">Я готов. Говорите, что мне делать!</field></shadow></value>
+      </block></next>
+    </block></xml>`,
+  // Ошибка одна: робот идёт назад вместо вперёд. Дети должны её найти.
+  diag_bug: `<xml xmlns="https://developers.google.com/blockly/xml">
+    <block type="event_start" x="40" y="40"><next>
+      <block type="sound_say_wait">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">Сейчас я подойду к вам и поздороваюсь!</field></shadow></value>
+        <next><block type="looks_eyes"><field name="COLOR">3</field><next>
+          <block type="motion_walk_for"><field name="DIR">BACKWARD</field>
+            <value name="SECS"><shadow type="math_number"><field name="NUM">2</field></shadow></value>
+            <next><block type="sound_say_wait">
+              <value name="TEXT"><shadow type="text"><field name="TEXT">Привет, ребята!</field></shadow></value>
+              <next><block type="dance_for">
+                <value name="SECS"><shadow type="math_number"><field name="NUM">4</field></shadow></value>
+              </block></next>
+            </block></next>
+          </block></next>
+        </block></next>
+      </block></next>
+    </block></xml>`,
 };
 
 function loadXml(xmlText) {
@@ -1214,9 +1241,13 @@ $("examples").onchange = () => {
 
 /* ---------- старт: восстановить сохранённое или показать пример ---------- */
 (() => {
+  const fromLink = (location.hash.match(/^#example-(\w+)$/) || [])[1];
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch {}
-  if (saved && saved.blocks && saved.blocks.blocks && saved.blocks.blocks.length) {
+  if (fromLink && EXAMPLES[fromLink]) {
+    loadXml(EXAMPLES[fromLink]);
+    history.replaceState(null, "", location.pathname);
+  } else if (saved && saved.blocks && saved.blocks.blocks && saved.blocks.blocks.length) {
     try { Blockly.serialization.workspaces.load(saved, ws); } catch { loadXml(EXAMPLES.hello); }
   } else {
     loadXml(EXAMPLES.hello);

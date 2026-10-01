@@ -154,7 +154,9 @@ const Robert = (() => {
   let ruVoice = null;
   function findVoice() {
     const vs = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith("ru"));
-    ruVoice = vs.find((v) => /irina|milena|svetlana|google/i.test(v.name)) || vs[0] || null;
+    // Нейросетевые голоса Edge (Dmitry/Svetlana «Natural») звучат заметно лучше обычных
+    ruVoice = vs.find((v) => /natural|online/i.test(v.name))
+      || vs.find((v) => /irina|milena|svetlana|google/i.test(v.name)) || vs[0] || null;
   }
   if (window.speechSynthesis) {
     findVoice();

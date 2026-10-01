@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Диагностика — Робот Роберт</title>
+<link rel="icon" href="static/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="static/favicon.png">
+<link rel="apple-touch-icon" href="static/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.48.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="static/codify.css">
+<style>
+  main.cols-diag { grid-template-columns: 1.4fr 1fr; max-width: 1200px; }
+  @media (max-width: 900px) { main.cols-diag { grid-template-columns: 1fr; } }
+
+  /* Этапы сверху вниз: ментор идёт по ним по порядку */
+  .stage { display: grid; grid-template-columns: 150px 1fr; gap: 14px; padding: 16px 0; border-top: 1px solid var(--line); }
+  .stage:first-child { border-top: 0; padding-top: 0; }
+  .stage-head b { display: block; font-size: 15px; }
+  .stage-head span { color: var(--muted); font-size: 13px; }
+  .stage-body { display: flex; flex-wrap: wrap; gap: 8px; align-content: start; }
+  .stage-body button { padding: 10px 14px; }
+  .stage-body button.speaking { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+  .stage-body .names-row { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
+  .stage-body .names-row button { border-radius: 999px; padding: 6px 12px; font-size: 14px; }
+  .stage-body .open { color: var(--muted); font-size: 18px; text-decoration: none; align-self: center; margin: 0 4px 0 -4px; }
+  .stage-body .open:hover { color: var(--primary); }
+  @media (max-width: 560px) { .stage { grid-template-columns: 1fr; gap: 8px; } }
+
+  .said { color: var(--muted); font-size: 14px; min-height: 22px; margin-top: 14px; }
+  .said b { color: var(--text); font-weight: 500; }
+  .voice-note { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .preset { display: flex; gap: 8px; flex-wrap: wrap; }
+  .preset .btn { text-decoration: none; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><img src="static/codify-logo.png" alt="Codify"><span>Робот Роберт</span></a>
+  <nav class="nav">
+    <a href="index.html"><i class="ti ti-layout-dashboard"></i>Панель</a>
+    <a href="diagnostika.html" class="active"><i class="ti ti-clipboard-check"></i>Диагностика</a>
+    <a href="blockly.html"><i class="ti ti-puzzle"></i>Блоки</a>
+    <a href="tm.html"><i class="ti ti-brain"></i>Teachable Machine</a>
+    <a href="follow.html"><i class="ti ti-focus-2"></i>Следуй за мной</a>
+    <a href="sound.html"><i class="ti ti-microphone"></i>Звуковые команды</a>
+    <a href="chat.html"><i class="ti ti-message-chatbot"></i>Спроси Роберта</a>
+  </nav>
+  <span class="status" id="robotStatus"><span class="dot"></span>…</span>
+  <button id="connectBtn"><i class="ti ti-plug-connected"></i>Подключить робота</button>
+</header>
+
+<main class="cols-diag">
+  <section class="stack">
+    <div class="card">
+      <h2><i class="ti ti-clipboard-check"></i>Сценарий диагностики<span class="grow"></span><span class="progress">45 минут</span></h2>
+      <div id="stages"></div>
+      <div class="row">
+        <button id="stopBtn"><i class="ti ti-player-stop"></i>Стоп</button>
+        <span class="muted">Каждая кнопка говорит одну из нескольких фраз, робот не повторяется.</span>
+      </div>
+      <div class="said" id="said"></div>
+    </div>
+  </section>
+
+  <section class="stack">
+    <div class="card">
+      <h2><i class="ti ti-users"></i>Имена детей</h2>
+      <input type="text" id="names" placeholder="Алиса, Марк, Тимур">
+      <p class="voice-note">Через запятую, как в записи на диагностику. Имена попадут в приветствие, похвалу и прощание.</p>
+    </div>
+
+    <div class="card">
+      <h2><i class="ti ti-checklist"></i>Перед диагностикой<span class="grow"></span><span class="progress" id="checkProgress"></span></h2>
+      <div id="checklist"></div>
+      <div class="row">
+        <button class="ghost" id="resetChecklist"><i class="ti ti-refresh"></i>Новая группа</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><i class="ti ti-puzzle"></i>Заготовки для финала</h2>
+      <div class="preset">
+        <a class="btn" href="blockly.html#example-diag_clean" target="_blank"><i class="ti ti-sparkles"></i>Чистая программа</a>
+        <a class="btn" href="blockly.html#example-diag_bug" target="_blank"><i class="ti ti-bug"></i>Программа с ошибкой</a>
+      </div>
+      <p class="voice-note">Чистая: только начало программы, дети говорят, что делать, ментор добавляет блоки из разделов Звук, Движение, Внешность, Танцы. С ошибкой: робот идёт назад вместо вперёд, дети ищут, где ошибка.</p>
+    </div>
+
+    <div class="card">
+      <h2><i class="ti ti-volume"></i>Голос</h2>
+      <p class="voice-note" id="voiceNote">Фразы без имён идут из готовых файлов в папке audio/diag. Фразы с именами робот говорит голосом браузера. В Edge голос лучше, чем в Chrome.</p>
+    </div>
+    <div class="msg" id="msg"></div>
+  </section>
+</main>
+
+<script src="robert.js"></script>
+<script src="diag_phrases.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const showErr = (e) => { $("msg").textContent = e.message || e; setTimeout(() => $("msg").textContent = "", 4000); };
+
+// ---------- имена ----------
+const NAMES_KEY = "diag_names";
+try { $("names").value = localStorage.getItem(NAMES_KEY) || ""; } catch {}
+const names = () => $("names").value.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+const joinNames = (list) => list.length < 2 ? list.join("") : list.slice(0, -1).join(", ") + " и " + list[list.length - 1];
+$("names").oninput = () => {
+  try { localStorage.setItem(NAMES_KEY, $("names").value); } catch {}
+  renderStages(); renderChecklist();
+};
+
+// ---------- речь: готовый файл или голос браузера ----------
+let audio = null, speakingBtn = null;
+const last = {};
+function pickIndex(btn) {
+  const n = btn.phrases.length;
+  let i;
+  do { i = Math.floor(Math.random() * n); } while (n > 1 && i === last[btn.id]);
+  last[btn.id] = i;
+  return i;
+}
+function markSpeaking(el) {
+  if (speakingBtn) speakingBtn.classList.remove("speaking");
+  speakingBtn = el;
+  if (el) el.classList.add("speaking");
+}
+function stopAll() {
+  if (audio) { audio.pause(); audio = null; }
+  Robert.stopSpeech();
+  markSpeaking(null);
+}
+async function speak(btn, el, name) {
+  stopAll();
+  const i = pickIndex(btn);
+  let text = btn.phrases[i];
+  const hasName = /\{имя\}|\{имена\}/.test(text);
+  text = text.replace("{имя}", name || "").replace("{имена}", joinNames(names()));
+  $("said").innerHTML = "Роберт: <b></b>";
+  $("said").querySelector("b").textContent = text;
+  markSpeaking(el);
+  if (btn.gesture && Robert.connected()) { try { Robert.hands(); } catch {} }
+  const browserVoice = () => Robert.say(text, {gesture: false}).then(() => markSpeaking(null));
+  if (hasName) return browserVoice();
+  const a = new Audio(`audio/diag/${btn.id}-${i}.mp3`);
+  audio = a;
+  a.onended = () => { if (audio === a) markSpeaking(null); };
+  a.onerror = () => { if (audio === a) browserVoice(); };
+  try { await a.play(); } catch { if (audio === a) browserVoice(); }
+}
+$("stopBtn").onclick = stopAll;
+
+// ---------- этапы ----------
+const OPEN_LINKS = {hear: "sound.html", see: "follow.html", eyes: "index.html"};
+function renderStages() {
+  const box = $("stages"); box.innerHTML = "";
+  DIAG_PHRASES.stages.forEach((stage) => {
+    const row = document.createElement("div"); row.className = "stage";
+    const head = document.createElement("div"); head.className = "stage-head";
+    head.innerHTML = "<b></b><span></span>";
+    head.querySelector("b").textContent = stage.title;
+    head.querySelector("span").textContent = stage.time;
+    const body = document.createElement("div"); body.className = "stage-body";
+    stage.buttons.forEach((btn) => {
+      const perName = btn.phrases.some((p) => p.includes("{имя}"));
+      if (perName) {
+        const wrap = document.createElement("div"); wrap.className = "names-row";
+        const label = document.createElement("span"); label.className = "muted";
+        label.innerHTML = `<i class="ti ${btn.icon}"></i> ${btn.label}:`;
+        wrap.appendChild(label);
+        const list = names();
+        if (!list.length) {
+          const s = document.createElement("span"); s.className = "muted"; s.textContent = "впишите имена справа";
+          wrap.appendChild(s);
+        }
+        list.forEach((name) => {
+          const b = document.createElement("button"); b.textContent = name;
+          b.onclick = () => speak(btn, b, name).catch(showErr);
+          wrap.appendChild(b);
+        });
+        body.appendChild(wrap);
+        return;
+      }
+      const b = document.createElement("button");
+      b.innerHTML = `<i class="ti ${btn.icon}"></i>`;
+      b.append(btn.label);
+      b.onclick = () => speak(btn, b).catch(showErr);
+      body.appendChild(b);
+      if (OPEN_LINKS[btn.id]) {
+        const a = document.createElement("a"); a.className = "open"; a.href = OPEN_LINKS[btn.id]; a.target = "_blank";
+        a.title = "Открыть страницу для этого номера"; a.innerHTML = '<i class="ti ti-external-link"></i>';
+        body.appendChild(a);
+      }
+    });
+    row.append(head, body);
+    box.appendChild(row);
+  });
+}
+renderStages();
+
+// ---------- чек-лист на 5 пунктов ----------
+const CHECKLIST = [
+  ["charged", "Робот заряжен и включён (кнопка на груди, 5 секунд)"],
+  ["connected", "Вверху написано «Робот подключён»", "robot"],
+  ["speaker", "Нажали «Привет», голос идёт из робота, а не из ноутбука"],
+  ["camera", "Камера свободна: закрыты другие вкладки и программы"],
+  ["names", "Имена детей вписаны", "names"],
+];
+const CHECK_KEY = "diag_checklist";
+let checks = {};
+try { checks = JSON.parse(localStorage.getItem(CHECK_KEY)) || {}; } catch {}
+let robotConnected = false;
+Robert.onStatus((s) => { robotConnected = s === "connected"; renderChecklist(); });
+function saveChecks() { try { localStorage.setItem(CHECK_KEY, JSON.stringify(checks)); } catch {} }
+function renderChecklist() {
+  const box = $("checklist"); box.innerHTML = "";
+  let done = 0;
+  CHECKLIST.forEach(([id, text, auto]) => {
+    const on = auto === "robot" ? robotConnected : auto === "names" ? names().length > 0 : !!checks[id];
+    if (on) done++;
+    const label = document.createElement("label"); label.className = "check" + (on ? " done" : "");
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = on;
+    if (auto) { cb.disabled = true; label.title = "Отмечается автоматически"; }
+    cb.onchange = () => { checks[id] = cb.checked; saveChecks(); renderChecklist(); };
+    const span = document.createElement("span"); span.textContent = text;
+    label.append(cb, span);
+    if (auto) label.insertAdjacentHTML("beforeend", '<i class="ti ti-bolt"></i>');
+    box.appendChild(label);
+  });
+  $("checkProgress").textContent = `${done} из ${CHECKLIST.length}`;
+}
+$("resetChecklist").onclick = () => {
+  checks = {}; saveChecks();
+  $("names").value = ""; try { localStorage.removeItem(NAMES_KEY); } catch {}
+  renderStages(); renderChecklist();
+};
+renderChecklist();
+</script>
+</body>
+</html>

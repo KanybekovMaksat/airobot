@@ -1,7 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
-tools/
+tools/platform-tools/
 reactions*.txt
 mentor_presets.json
 claude_key.txt
