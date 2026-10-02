@@ -278,6 +278,12 @@ const Robert = (() => {
           alert("Не получилось подключиться: " + e.message);
       }
     };
+    // Бургер-меню: закрывать по клику мимо и по Esc
+    const menu = document.querySelector(".topbar .menu");
+    if (menu) {
+      document.addEventListener("click", (e) => { if (!menu.contains(e.target)) menu.open = false; });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") menu.open = false; });
+    }
   }
   document.addEventListener("DOMContentLoaded", initHeader);
 

@@ -31,13 +31,28 @@ body {
 .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
 .brand img { height: 22px; display: block; }
 .brand span { color: var(--muted); font-size: 14px; padding-left: 12px; border-left: 1px solid var(--line); }
-.nav { display: flex; gap: 4px; flex: 1; }
-.nav a {
-  display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 10px;
-  color: var(--muted); text-decoration: none; font-weight: 500;
+/* Бургер-меню со ссылками на страницы */
+.menu { position: relative; }
+.menu > summary {
+  list-style: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: 10px; color: var(--muted); font-size: 22px;
 }
-.nav a:hover { color: var(--text); background: #F5F7FB; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary:hover, .menu[open] > summary { color: var(--text); background: #F5F7FB; }
+.menu .nav {
+  position: absolute; left: 0; top: calc(100% + 8px); min-width: 240px; z-index: 20;
+  display: flex; flex-direction: column; gap: 2px; padding: 6px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(15, 27, 51, .12);
+}
+.nav a {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px;
+  color: var(--text); text-decoration: none; font-weight: 500; white-space: nowrap;
+}
+.nav a .ti { font-size: 18px; color: var(--muted); }
+.nav a:hover { background: #F5F7FB; }
 .nav a.active { color: var(--primary); background: var(--primary-soft); }
+.nav a.active .ti { color: var(--primary); }
 .status { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
 .dot.ok { background: var(--ok); }
