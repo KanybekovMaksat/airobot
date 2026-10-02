@@ -24,12 +24,15 @@
   .stage-body { display: flex; flex-wrap: wrap; gap: 8px; align-content: start; }
   .stage-body button { padding: 10px 14px; }
   .stage-body button.speaking { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
-  .stage-body .names-row { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
-  .stage-body .names-row button { border-radius: 999px; padding: 6px 12px; font-size: 14px; }
   .stage-body .open { color: var(--muted); font-size: 18px; text-decoration: none; align-self: center; margin: 0 4px 0 -4px; }
   .stage-body .open:hover { color: var(--primary); }
   @media (max-width: 560px) { .stage { grid-template-columns: 1fr; gap: 8px; } }
 
+  .stage-body .names-row { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .stage-body .names-row button { border-radius: 999px; padding: 6px 12px; font-size: 14px; }
+  input[type=password] { width: 100%; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  input[type=password]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
   .said { color: var(--muted); font-size: 14px; min-height: 22px; margin-top: 14px; }
   .said b { color: var(--text); font-weight: 500; }
   .voice-note { font-size: 13px; color: var(--muted); margin-top: 10px; }
@@ -39,16 +42,8 @@
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="index.html"><img src="static/codify-logo.png" alt="Codify"><span>Робот Роберт</span></a>
-  <nav class="nav">
-    <a href="index.html"><i class="ti ti-layout-dashboard"></i>Панель</a>
-    <a href="diagnostika.html" class="active"><i class="ti ti-clipboard-check"></i>Диагностика</a>
-    <a href="blockly.html"><i class="ti ti-puzzle"></i>Блоки</a>
-    <a href="tm.html"><i class="ti ti-brain"></i>Teachable Machine</a>
-    <a href="follow.html"><i class="ti ti-focus-2"></i>Следуй за мной</a>
-    <a href="sound.html"><i class="ti ti-microphone"></i>Звуковые команды</a>
-    <a href="chat.html"><i class="ti ti-message-chatbot"></i>Спроси Роберта</a>
-  </nav>
+  <span class="brand"><img src="static/codify-logo.png" alt="Codify"><span>Робот Роберт · Диагностика</span></span>
+  <span class="grow"></span>
   <span class="status" id="robotStatus"><span class="dot"></span>…</span>
   <button id="connectBtn"><i class="ti ti-plug-connected"></i>Подключить робота</button>
 </header>
@@ -70,7 +65,28 @@
     <div class="card">
       <h2><i class="ti ti-users"></i>Имена детей</h2>
       <input type="text" id="names" placeholder="Алиса, Марк, Тимур">
-      <p class="voice-note">Через запятую, как в записи на диагностику. Имена попадут в приветствие, похвалу и прощание.</p>
+      <div class="row">
+        <button id="prepBtn"><i class="ti ti-wand"></i>Подготовить фразы с именами</button>
+        <span class="muted" id="prepState"></span>
+      </div>
+      <p class="voice-note">Через запятую, как в записи на диагностику. Нажмите «Подготовить» заранее: фразы с именами озвучатся голосом Роберта и будут играть без задержки.</p>
+    </div>
+
+    <div class="card">
+      <h2><i class="ti ti-key"></i>Голос для имён (ElevenLabs)</h2>
+      <div class="row" style="margin-top:0">
+        <input type="password" id="elKey" class="grow" placeholder="Ключ ElevenLabs: sk_…" autocomplete="off">
+        <button class="icon" id="elEye" title="Показать / скрыть"><i class="ti ti-eye"></i></button>
+      </div>
+      <div class="row">
+        <select id="elVoice" class="grow"><option value="">Голос: нажмите «Загрузить голоса»</option></select>
+        <button id="elLoad"><i class="ti ti-refresh"></i>Загрузить голоса</button>
+      </div>
+      <div class="row">
+        <input type="text" id="elVoiceId" class="grow" placeholder="…или ID голоса вручную (Voices → голос → ID)" autocomplete="off">
+      </div>
+      <div class="muted" id="elState" style="margin-top:8px"></div>
+      <p class="voice-note">Ключ: elevenlabs.io → Profile → API Keys. При выпуске ключа включите права Text to Speech и Voices: Read, иначе список голосов не загрузится и ID придётся вписать вручную. Голос выберите тот, которым записаны остальные фразы. Ключ хранится только в этом браузере.</p>
     </div>
 
     <div class="card">
@@ -92,7 +108,7 @@
 
     <div class="card">
       <h2><i class="ti ti-volume"></i>Голос</h2>
-      <p class="voice-note" id="voiceNote">Фразы без имён идут из готовых файлов в папке audio/diag. Фразы с именами робот говорит голосом браузера. В Edge голос лучше, чем в Chrome.</p>
+      <p class="voice-note" id="voiceNote">Обычные кнопки звучат записанным голосом Роберта из папки audio/diag. Кнопки с именами детей озвучивает ElevenLabs тем же голосом. Голос браузера не используется.</p>
     </div>
     <div class="msg" id="msg"></div>
   </section>
@@ -109,13 +125,98 @@ const NAMES_KEY = "diag_names";
 try { $("names").value = localStorage.getItem(NAMES_KEY) || ""; } catch {}
 const names = () => $("names").value.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
 const joinNames = (list) => list.length < 2 ? list.join("") : list.slice(0, -1).join(", ") + " и " + list[list.length - 1];
+const hasName = (text) => /\{имя\}|\{имена\}/.test(text);
+const fill = (text, name) => text.replace("{имя}", name || "").replace("{имена}", joinNames(names()));
 $("names").oninput = () => {
   try { localStorage.setItem(NAMES_KEY, $("names").value); } catch {}
+  $("prepState").textContent = "";
   renderStages(); renderChecklist();
 };
 
-// ---------- речь: готовый файл или голос браузера ----------
-let audio = null, speakingBtn = null;
+// Все фразы с именами для текущего списка детей
+function namePhrases() {
+  const out = [];
+  DIAG_PHRASES.stages.forEach((stage) => stage.buttons.forEach((btn) => {
+    btn.phrases.forEach((p) => {
+      if (!hasName(p)) return;
+      if (p.includes("{имя}")) names().forEach((n) => out.push(fill(p, n)));
+      else if (names().length) out.push(fill(p));
+    });
+  }));
+  return out;
+}
+$("prepBtn").onclick = async () => {
+  const list = namePhrases();
+  if (!list.length) return showErr("сначала впишите имена");
+  if (!ElevenLabs.ready()) return showErr("вставьте ключ ElevenLabs и выберите голос");
+  $("prepBtn").disabled = true;
+  try {
+    for (let i = 0; i < list.length; i++) {
+      $("prepState").textContent = `озвучиваю ${i + 1} из ${list.length}…`;
+      await ElevenLabs.synth(list[i]);
+    }
+    $("prepState").textContent = `готово: ${list.length} фраз`;
+  } catch (e) { $("prepState").textContent = ""; showErr(e); }
+  $("prepBtn").disabled = false;
+  renderChecklist();
+};
+
+// ---------- ключ и голос ElevenLabs ----------
+$("elKey").value = ElevenLabs.key();
+let keyTimer = null;
+$("elKey").oninput = () => {
+  ElevenLabs.setKey($("elKey").value); showElState(); renderChecklist();
+  clearTimeout(keyTimer);
+  if (ElevenLabs.key().length > 20) keyTimer = setTimeout(loadVoices, 600);  // список голосов подтянется сам
+};
+$("elEye").onclick = () => { $("elKey").type = $("elKey").type === "password" ? "text" : "password"; };
+$("elVoice").onchange = () => { ElevenLabs.setVoice($("elVoice").value); $("elVoiceId").value = $("elVoice").value; showElState(); renderChecklist(); };
+$("elVoiceId").value = ElevenLabs.voiceId();
+$("elVoiceId").oninput = () => {
+  const id = $("elVoiceId").value.trim();
+  ElevenLabs.setVoice(id);
+  if (![...$("elVoice").options].some((o) => o.value === id)) $("elVoice").value = "";
+  else $("elVoice").value = id;
+  showElState(); renderChecklist();
+};
+function showVoices(list) {
+  const sel = $("elVoice"); sel.innerHTML = "";
+  const cur = ElevenLabs.voiceId();
+  const opt = document.createElement("option"); opt.value = ""; opt.textContent = "Выберите голос Роберта";
+  sel.appendChild(opt);
+  list.forEach((v) => {
+    const o = document.createElement("option"); o.value = v.id; o.textContent = v.kind ? `${v.name} (${v.kind})` : v.name;
+    if (v.id === cur) o.selected = true;
+    sel.appendChild(o);
+  });
+  try { localStorage.setItem("eleven_voices", JSON.stringify(list)); } catch {}
+}
+try { const saved = JSON.parse(localStorage.getItem("eleven_voices")); if (saved && saved.length) showVoices(saved); } catch {}
+async function loadVoices() {
+  $("elLoad").disabled = true;
+  $("elState").textContent = "загружаю голоса…";
+  try {
+    const list = await ElevenLabs.voices();
+    showVoices(list);
+    showElState(list.length ? `Голосов в аккаунте: ${list.length}, выберите голос Роберта` : "В аккаунте нет голосов");
+  } catch (e) { showElState(); showErr(e); }
+  $("elLoad").disabled = false;
+}
+$("elLoad").onclick = loadVoices;
+function showElState(extra) {
+  $("elState").textContent = !ElevenLabs.key() ? "Вставьте ключ, чтобы Роберт звал детей по имени"
+    : !ElevenLabs.voiceId() ? (extra || "Ключ вставлен ✓ — теперь выберите голос")
+    : "Ключ и голос выбраны ✓";
+}
+showElState();
+// Ключ уже есть, а списка голосов ещё нет — подтянуть при открытии страницы
+if (ElevenLabs.key() && $("elVoice").options.length < 2) loadVoices();
+
+// ---------- речь: записанный голос Роберта, для имён — ElevenLabs ----------
+DIAG_PHRASES.stages.forEach((stage) => stage.buttons.forEach((btn) => {
+  btn.phrases.forEach((text, i) => { if (!hasName(text)) Robert.addRecording(text, `${btn.id}-${i}.mp3`); });
+}));
+let speakingBtn = null;
 const last = {};
 function pickIndex(btn) {
   const n = btn.phrases.length;
@@ -130,27 +231,27 @@ function markSpeaking(el) {
   if (el) el.classList.add("speaking");
 }
 function stopAll() {
-  if (audio) { audio.pause(); audio = null; }
   Robert.stopSpeech();
   markSpeaking(null);
 }
 async function speak(btn, el, name) {
   stopAll();
   const i = pickIndex(btn);
-  let text = btn.phrases[i];
-  const hasName = /\{имя\}|\{имена\}/.test(text);
-  text = text.replace("{имя}", name || "").replace("{имена}", joinNames(names()));
+  const raw = btn.phrases[i];
+  const text = fill(raw, name);
   $("said").innerHTML = "Роберт: <b></b>";
   $("said").querySelector("b").textContent = text;
   markSpeaking(el);
-  if (btn.gesture && Robert.connected()) { try { Robert.hands(); } catch {} }
-  const browserVoice = () => Robert.say(text, {gesture: false}).then(() => markSpeaking(null));
-  if (hasName) return browserVoice();
-  const a = new Audio(`audio/diag/${btn.id}-${i}.mp3`);
-  audio = a;
-  a.onended = () => { if (audio === a) markSpeaking(null); };
-  a.onerror = () => { if (audio === a) browserVoice(); };
-  try { await a.play(); } catch { if (audio === a) browserVoice(); }
+  try {
+    if (hasName(raw)) {
+      if (btn.gesture && Robert.connected()) { try { Robert.hands(); } catch {} }
+      await ElevenLabs.say(text);
+    } else {
+      await Robert.say(text, {gesture: !!btn.gesture});
+    }
+  } finally {
+    if (speakingBtn === el) markSpeaking(null);
+  }
 }
 $("stopBtn").onclick = stopAll;
 
@@ -165,6 +266,15 @@ function renderStages() {
     head.querySelector("b").textContent = stage.title;
     head.querySelector("span").textContent = stage.time;
     const body = document.createElement("div"); body.className = "stage-body";
+    if (!stage.buttons.length) {
+      // Фраз без записи здесь нет: ментор говорит сам и открывает страницы показа
+      [["Я слышу", "sound.html", "ti-ear"], ["Я вижу", "follow.html", "ti-eye"], ["Цвет глаз", "index.html", "ti-palette"]]
+        .forEach(([label, href, icon]) => {
+          const a = document.createElement("a"); a.className = "btn"; a.href = href; a.target = "_blank";
+          a.innerHTML = `<i class="ti ${icon}"></i>`; a.append(label);
+          body.appendChild(a);
+        });
+    }
     stage.buttons.forEach((btn) => {
       const perName = btn.phrases.some((p) => p.includes("{имя}"));
       if (perName) {
@@ -202,13 +312,14 @@ function renderStages() {
 }
 renderStages();
 
-// ---------- чек-лист на 5 пунктов ----------
+// ---------- чек-лист ----------
 const CHECKLIST = [
   ["charged", "Робот заряжен и включён (кнопка на груди, 5 секунд)"],
   ["connected", "Вверху написано «Робот подключён»", "robot"],
   ["speaker", "Нажали «Привет», голос идёт из робота, а не из ноутбука"],
   ["camera", "Камера свободна: закрыты другие вкладки и программы"],
   ["names", "Имена детей вписаны", "names"],
+  ["voice", "Ключ и голос ElevenLabs выбраны", "eleven"],
 ];
 const CHECK_KEY = "diag_checklist";
 let checks = {};
@@ -220,7 +331,10 @@ function renderChecklist() {
   const box = $("checklist"); box.innerHTML = "";
   let done = 0;
   CHECKLIST.forEach(([id, text, auto]) => {
-    const on = auto === "robot" ? robotConnected : auto === "names" ? names().length > 0 : !!checks[id];
+    const on = auto === "robot" ? robotConnected
+      : auto === "names" ? names().length > 0
+      : auto === "eleven" ? ElevenLabs.ready()
+      : !!checks[id];
     if (on) done++;
     const label = document.createElement("label"); label.className = "check" + (on ? " done" : "");
     const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = on;
@@ -236,6 +350,7 @@ function renderChecklist() {
 $("resetChecklist").onclick = () => {
   checks = {}; saveChecks();
   $("names").value = ""; try { localStorage.removeItem(NAMES_KEY); } catch {}
+  $("prepState").textContent = "";
   renderStages(); renderChecklist();
 };
 renderChecklist();

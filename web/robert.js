@@ -150,7 +150,7 @@ const Robert = (() => {
 
   const setSpeed = (v) => { speed = Math.max(0, Math.min(3, v | 0)); };
 
-  // ---------- речь (синтез браузера; если робот сопряжён как колонка — звук идёт из него) ----------
+  // ---------- речь: записанный голос из audio/diag или синтез браузера (робот сопряжён как колонка — звук идёт из него) ----------
   let ruVoice = null;
   function findVoice() {
     const vs = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith("ru"));
@@ -169,9 +169,42 @@ const Robert = (() => {
     return text;
   }
 
-  function say(text, {gesture = true, rate = 1, volume = 1} = {}) {
+  // Записанный голос Роберта: фраза → mp3 в audio/diag. Сравниваем без знаков препинания и регистра,
+  // поэтому «Урок закончен, не забудьте…» и «Урок закончен. Не забудьте…» — одна запись.
+  const RECORDED_LIST = [
+    ["Всем привет! Меня зовут Роберт, и я робот IT-школы Кодифай.", "hello-0"],
+    ["Я Роберт, танцующий робот IT-школы Кодифай. Я умею ходить, танцевать, менять цвет глаз и слушать ваши команды.", "about-0"],
+    ["Друзья, пора учиться. Сегодня мы научимся чему-то новому, так что рассаживайтесь поудобнее. Мы начинаем!", "start-0"],
+    ["Почему робот не боится темноты? Потому что у него глаза светятся! Ха-ха.", "joke-0"],
+    ["Почему робот не боится темноты? Потому что у него глаза светятся!", "joke-0"],
+    ["Какой у робота любимый танец? Робот-н-ролл! Ха-ха-ха.", "joke-1"],
+    ["Какой у робота любимый танец? Робот-н-ролл!", "joke-1"],
+    ["Я не ленивый робот, я просто в режиме энергосбережения.", "joke-2"],
+    ["Вот это да! Вы настоящие программисты!", "final_done-0"],
+    ["Урок закончен, не забудьте сохранить свои проекты. Пока!", "bye-0"],
+  ];
+  // Метка версии записей. Поменяйте её, когда заменили mp3 на новый с тем же именем,
+  // иначе браузер будет играть старый файл из кеша.
+  const AUDIO_VERSION = "2026-10-02b";
+  const audioUrl = (file) => `audio/diag/${file}?v=${AUDIO_VERSION}`;
+  const normText = (t) => String(t).toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9]+/g, "");
+  const RECORDED = Object.fromEntries(RECORDED_LIST.map(([t, f]) => [normText(t), audioUrl(f + ".mp3")]));
+  let recordedAudio = null;
+  const addRecording = (text, file) => { RECORDED[normText(text)] = audioUrl(file); };
+
+  function playRecorded(src, volume) {
+    return new Promise((resolve, reject) => {
+      const a = new Audio(src);
+      recordedAudio = a;
+      a.volume = volume;
+      a.onended = () => { if (recordedAudio === a) recordedAudio = null; resolve(); };
+      a.onerror = () => { if (recordedAudio === a) recordedAudio = null; reject(new Error("нет файла " + src)); };
+      a.play().catch(reject);
+    });
+  }
+
+  function sayBrowser(text, rate, volume) {
     if (!window.speechSynthesis) return Promise.resolve();
-    if (gesture && connected()) { try { hands(); } catch {} }
     return new Promise((resolve) => {
       const u = new SpeechSynthesisUtterance(pronounce(text));
       u.lang = "ru-RU";
@@ -182,41 +215,42 @@ const Robert = (() => {
     });
   }
 
-  const stopSpeech = () => speechSynthesis && speechSynthesis.cancel();
+  // Сначала записанный голос Роберта, если такой фразы нет или файл не загрузился — голос браузера
+  function say(text, {gesture = true, rate = 1, volume = 1} = {}) {
+    stopSpeech();
+    if (gesture && connected()) { try { hands(); } catch {} }
+    const src = RECORDED[normText(text)];
+    if (src) return playRecorded(src, volume).catch(() => sayBrowser(text, rate, volume));
+    return sayBrowser(text, rate, volume);
+  }
+
+  const stopSpeech = () => {
+    if (recordedAudio) { recordedAudio.pause(); recordedAudio = null; }
+    if (window.speechSynthesis) speechSynthesis.cancel();
+  };
 
   // ---------- фразы ----------
+  // Только фразы, записанные голосом Роберта (см. RECORDED_LIST). Новую фразу сначала записать в mp3.
   const PHRASES = {
     "Приветствие": [
-      "Привет! Я Роберт из IT-школы Кодифай.",
-      "Всем привет! Меня зовут Роберт, я робот IT-школы Кодифай.",
-      "Здравствуйте, ребята! Робот Роберт из Кодифая на связи.",
-    ],
-    "Начало урока": [
-      "Внимание! Урок начинается. Сегодня мы будем изучать искусственный интеллект.",
-      "Рассаживайтесь поудобнее. Начинаем урок в IT-школе Кодифай!",
-      "Друзья, пора учиться! Сегодня вы научите меня чему-то новому.",
-      "Урок начинается! Открывайте ноутбуки и приготовьтесь программировать.",
-    ],
-    "Похвала": [
-      "Молодцы! Отличная работа!",
-      "Вот это да! Вы настоящие программисты!",
-      "Супер! Я горжусь вами.",
-      "Отлично! Так держать!",
-    ],
-    "Шутки": [
-      "Почему робот не боится темноты? Потому что у него глаза светятся!",
-      "Какой у робота любимый танец? Робот-н-ролл!",
-      "Почему программисты путают Хэллоуин и Рождество? Потому что тридцать один в восьмеричной системе равно двадцати пяти в десятичной.",
-      "Я не ленивый робот. Я просто в режиме энергосбережения.",
+      "Всем привет! Меня зовут Роберт, и я робот IT-школы Кодифай.",
     ],
     "О себе": [
       "Я Роберт, танцующий робот IT-школы Кодифай. Я умею ходить, танцевать, менять цвет глаз и слушать ваши команды.",
-      "Меня зовут Роберт. Я живу в IT-школе Кодифай и помогаю ребятам изучать искусственный интеллект.",
+    ],
+    "Начало урока": [
+      "Друзья, пора учиться. Сегодня мы научимся чему-то новому, так что рассаживайтесь поудобнее. Мы начинаем!",
+    ],
+    "Шутки": [
+      "Почему робот не боится темноты? Потому что у него глаза светятся! Ха-ха.",
+      "Какой у робота любимый танец? Робот-н-ролл! Ха-ха-ха.",
+      "Я не ленивый робот, я просто в режиме энергосбережения.",
+    ],
+    "Похвала": [
+      "Вот это да! Вы настоящие программисты!",
     ],
     "Конец урока": [
-      "Урок окончен. Спасибо за работу! До встречи в Кодифае!",
-      "На сегодня всё. Вы молодцы! Увидимся на следующем уроке.",
-      "Урок закончен. Не забудьте сохранить свои проекты. Пока!",
+      "Урок закончен, не забудьте сохранить свои проекты. Пока!",
     ],
   };
 
@@ -248,7 +282,8 @@ const Robert = (() => {
   document.addEventListener("DOMContentLoaded", initHeader);
 
   return {connect, disconnect, connected, send, walk, walkFor, stop,
-          hands, legs, combo, dance, eyes, setSpeed, say, stopSpeech,
+          hands, legs, combo, dance, eyes, setSpeed, say, stopSpeech, addRecording,
+          playAudio: (src) => playRecorded(src, 1),
           onStatus: (cb) => statusCbs.push(cb),
           FORWARD, BACKWARD, LEFT, RIGHT, COLORS, PHRASES};
 })();
@@ -301,5 +336,90 @@ const Gemini = {
     throw new Error(overloaded
       ? "нейросеть Google сейчас перегружена — подождите минуту и спросите ещё раз"
       : "модели Gemini недоступны — попробуйте позже");
+  },
+};
+
+/* ---------- ElevenLabs: озвучка фраз с именами детей тем же голосом Роберта ----------
+   Ключ и голос хранятся только в браузере ментора (localStorage). Готовый звук кладём
+   в кеш браузера (Cache API), чтобы одно и то же имя не озвучивать дважды и не тратить лимит. */
+const ElevenLabs = {
+  API: "https://api.elevenlabs.io/v1",
+  MODEL: "eleven_multilingual_v2",
+  KEY_STORE: "eleven_key",
+  VOICE_STORE: "eleven_voice",
+  memory: new Map(),  // text → blob-URL на эту сессию
+
+  key() { try { return (localStorage.getItem(this.KEY_STORE) || "").trim(); } catch { return ""; } },
+  voiceId() { try { return (localStorage.getItem(this.VOICE_STORE) || "").trim(); } catch { return ""; } },
+  setKey(v) { try { localStorage.setItem(this.KEY_STORE, (v || "").trim()); } catch {} },
+  setVoice(v) { try { localStorage.setItem(this.VOICE_STORE, (v || "").trim()); } catch {} },
+  ready() { return !!(this.key() && this.voiceId()); },
+
+  async request(path, init = {}) {
+    const key = this.key();
+    if (!key) throw new Error("нет ключа ElevenLabs — вставьте его в карточке «Голос для имён»");
+    let r;
+    try {
+      r = await fetch(this.API + path, {...init, headers: {"xi-api-key": key, ...(init.headers || {})}});
+    } catch {
+      throw new Error("нет соединения с ElevenLabs — проверьте интернет");
+    }
+    if (r.ok) return r;
+    let detail = null;
+    try { detail = (await r.json()).detail; } catch {}
+    if (detail?.status === "missing_permissions") {
+      const perm = (detail.message || "").match(/permission (\w+)/)?.[1] || "";
+      throw new Error(perm === "voices_read"
+        ? "у ключа нет права на список голосов — впишите ID голоса вручную или выпустите ключ с правами Voices: Read и Text to Speech"
+        : "у ключа ElevenLabs нет права " + perm + " — выпустите ключ с правами Text to Speech");
+    }
+    if (detail?.code === "paid_plan_required")
+      throw new Error("этот голос из библиотеки ElevenLabs, на бесплатном тарифе он через API не работает — выберите голос с пометкой «базовый» или оформите платный тариф");
+    if (r.status === 401) throw new Error("ключ ElevenLabs не подошёл — проверьте, что скопировали его целиком");
+    if (r.status === 402 || r.status === 429) throw new Error("лимит символов ElevenLabs исчерпан — подождите или пополните тариф");
+    const msg = typeof detail === "string" ? detail : detail?.message || "";
+    throw new Error("ElevenLabs ответил ошибкой " + r.status + (msg ? ": " + msg : ""));
+  },
+
+  /** Список голосов аккаунта: [{id, name}] */
+  async voices() {
+    const data = await (await this.request("/voices")).json();
+    // category: premade — базовые голоса ElevenLabs (есть на бесплатном тарифе),
+    // cloned/generated — свои, professional — из библиотеки (через API только на платном тарифе)
+    const kind = {premade: "базовый", cloned: "свой клон", generated: "свой", professional: "библиотека, платно"};
+    return (data.voices || []).map((v) => ({id: v.voice_id, name: v.name, category: v.category, kind: kind[v.category] || v.category || ""}));
+  },
+
+  cacheKey(text) { return "/eleven/" + this.voiceId() + "/" + encodeURIComponent(text); },
+
+  /** Текст → URL готового mp3 (из кеша или с сервера) */
+  async synth(text) {
+    text = String(text).trim();
+    if (this.memory.has(text)) return this.memory.get(text);
+    const voice = this.voiceId();
+    if (!voice) throw new Error("не выбран голос ElevenLabs — выберите его в карточке «Голос для имён»");
+    let cache = null;
+    try { cache = window.caches ? await caches.open("eleven-voice") : null; } catch {}
+    let blob = null;
+    if (cache) { const hit = await cache.match(this.cacheKey(text)); if (hit) blob = await hit.blob(); }
+    if (!blob) {
+      const r = await this.request(`/text-to-speech/${voice}?output_format=mp3_44100_128`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "Accept": "audio/mpeg"},
+        body: JSON.stringify({text, model_id: this.MODEL}),
+      });
+      blob = await r.blob();
+      if (cache) { try { await cache.put(this.cacheKey(text), new Response(blob, {headers: {"Content-Type": "audio/mpeg"}})); } catch {} }
+    }
+    const url = URL.createObjectURL(blob);
+    this.memory.set(text, url);
+    return url;
+  },
+
+  /** Озвучить сразу: сгенерировать (или взять из кеша) и проиграть */
+  async say(text) {
+    const url = await this.synth(text);
+    Robert.stopSpeech();
+    return Robert.playAudio(url);
   },
 };
