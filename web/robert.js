@@ -34,14 +34,86 @@ const Robert = (() => {
                            speed, color, light, 2, 2, 1, 1, 0x55, 0x55]);
   }
 
-  const connected = () => !!(device && device.gatt.connected && writeChar);
+  // ---------- оболочка app.html: связь живёт во внешней странице ----------
+  // В Chrome Bluetooth-подключение принадлежит странице и рвётся при переходе по ссылке.
+  // Поэтому разделы открываются внутри app.html (iframe), а робота держит она. Страница
+  // внутри рамки делегирует связь родителю через host.* — свой Bluetooth не трогает.
+  const IS_SHELL = /(^|\/)app\.html$/.test(location.pathname);
+  const host = (() => {
+    try {
+      const p = window.parent;
+      return p !== window && p.Robert && p.Robert._host ? p.Robert._host : null;
+    } catch { return null; }  // чужой origin — считаем, что оболочки нет
+  })();
+  // Открыли раздел напрямую (не в оболочке и не в чужой рамке) — заворачиваем в app.html,
+  // чтобы связь не терялась при переходах. Хэш раздела (#example-…, #selftest) сохраняем.
+  if (!IS_SHELL && !host && window.top === window && /^https?:$/.test(location.protocol)) {
+    const page = (location.pathname.split("/").pop() || "index.html") + location.hash;
+    location.replace("app.html#" + page);
+  }
 
+  // ---------- локальный мост (local_server.py) ----------
+  // Если страница открыта через local_server.py (http://localhost:8765), роботом управляет
+  // сервер через системный Bluetooth Windows, а не Chrome. Окно выбора устройств не нужно.
+  let bridge = null;  // последний ответ /api/status или null, когда моста нет
+  const bridgeState = () => (bridge ? bridge.state : null);
+  async function bridgeApi(path, body) {
+    const r = await fetch("/api/" + path, {method: body == null ? "GET" : "POST", body,
+                                           cache: "no-store"});
+    return r.json();
+  }
+  async function detectBridge() {
+    if (host || !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
+    try {
+      const j = await bridgeApi("status");
+      if (!j || !j.bridge) return;
+      bridge = j; notify();
+      setInterval(async () => {
+        const before = bridgeState();
+        try { bridge = await bridgeApi("status"); } catch { bridge = {...bridge, state: "disconnected", error: "local_server.py не отвечает — запустите ЗАПУСК.bat заново"}; }
+        if (bridgeState() !== before) notify();
+      }, 1000);
+    } catch {}
+  }
+  detectBridge();
+
+  const connected = () => host ? host.state() === "connected"
+                               : bridge ? bridgeState() === "connected"
+                               : !!(device && device.gatt.connected && writeChar);
+
+  function state() {
+    if (host) return host.state();
+    const busy = bridge ? bridgeState() === "connecting" : connecting;
+    return busy ? "connecting" : connected() ? "connected" : "disconnected";
+  }
   function notify() {
-    const s = connecting ? "connecting" : connected() ? "connected" : "disconnected";
+    const s = state();
     statusCbs.forEach((cb) => cb(s));
+  }
+  // Статус родителя → наши подписчики. При уходе со страницы отписываемся, чтобы
+  // в оболочке не копились обработчики от закрытых разделов.
+  if (host) {
+    host.onStatus(notify);
+    window.addEventListener("pagehide", () => host.offStatus(notify));
+  }
+  // Подпись к статусу в локальном режиме (local_server.py): «· Bluetooth Windows» и его сообщение
+  function bridgeInfo() {
+    if (host) return host.bridgeInfo();
+    return bridge ? {error: bridge.error} : null;
   }
 
   // ---------- подключение ----------
+  async function bridgeConnect() {
+    bridge = await bridgeApi("connect", ""); notify();
+    while (bridgeState() === "connecting") {
+      await new Promise((r) => setTimeout(r, 500));
+      bridge = await bridgeApi("status");
+    }
+    notify();
+    if (bridgeState() !== "connected") throw new Error(bridge.error || "робот не найден");
+    lastWrite = Date.now();
+  }
+
   async function attach() {
     const gatt = await device.gatt.connect();
     const svc = await gatt.getPrimaryService(SERVICE);
@@ -49,6 +121,8 @@ const Robert = (() => {
   }
 
   async function connect() {
+    if (host) return host.connect();
+    if (bridge) return bridgeConnect();
     if (!navigator.bluetooth)
       throw new Error("этот браузер не умеет Web Bluetooth — откройте сайт в Chrome или Edge (не iPhone)");
     connecting = true; notify();
@@ -68,7 +142,7 @@ const Robert = (() => {
   // переподключаемся, пока ментор не нажал «Отключить» или робот не выключился
   let reconnecting = false;
   async function tryReattach() {
-    if (reconnecting || !wantConnected || !device || connected()) return;
+    if (host || bridge || reconnecting || !wantConnected || !device || connected()) return;
     reconnecting = true; connecting = true; notify();
     for (let i = 0; wantConnected && device && !connected(); i++) {
       try { await attach(); lastWrite = Date.now(); break; } catch {}
@@ -90,6 +164,11 @@ const Robert = (() => {
 
   function disconnect() {
     wantConnected = false;
+    if (host) return host.disconnect();
+    if (bridge) {
+      bridgeApi("disconnect", "").then((j) => { bridge = j; notify(); }).catch(() => {});
+      return;
+    }
     if (device && device.gatt.connected) {
       try { send(IDLE); } catch {}
       device.gatt.disconnect();
@@ -101,6 +180,7 @@ const Robert = (() => {
   // безобидный «стоп»; а если связь порвалась незаметно — пробуем переподключиться.
   // Интервал с запасом: в фоновой вкладке Chrome будит таймеры не чаще раза в минуту.
   setInterval(() => {
+    if (host || bridge) return;  // за пульсом и переподключением следит оболочка или local_server.py
     if (connected()) {
       if (Date.now() - lastWrite > 60000) { try { send(IDLE); } catch {} }
     } else {
@@ -111,10 +191,14 @@ const Robert = (() => {
   // Записи по одной: BLE не любит параллельные операции
   function send(action, param = 8) {
     if (!connected()) throw new Error("робот не подключён — нажмите «Подключить робота»");
-    const data = packet(action, param);
+    return writeRaw(packet(action, param));
+  }
+  function writeRaw(data) {
+    if (host) return host.writeRaw(data);
     lastWrite = Date.now();
+    const hex = Array.from(data, (b) => b.toString(16).padStart(2, "0")).join("");
     writeQueue = writeQueue
-      .then(() => writeChar.writeValueWithoutResponse(data))
+      .then(() => bridge ? bridgeApi("send", hex) : writeChar.writeValueWithoutResponse(data))
       .catch(() => {});
     return writeQueue;
   }
@@ -262,7 +346,10 @@ const Robert = (() => {
       if (status) {
         const map = {connected: ["ok", "Робот подключён"], connecting: ["wait", "Подключаюсь…"],
                      disconnected: ["", "Робот не подключён"]};
-        const [cls, label] = map[s];
+        let [cls, label] = map[s];
+        // Локальный режим: связь держит local_server.py, покажем это и его сообщение
+        const bi = bridgeInfo();
+        if (bi) label += s === "connecting" && bi.error ? ` (${bi.error})` : " · Bluetooth Windows";
         status.innerHTML = `<span class="dot ${cls}"></span>${label}`;
       }
       if (btn) btn.innerHTML = s === "connected"
@@ -270,7 +357,7 @@ const Robert = (() => {
         : '<i class="ti ti-plug-connected"></i>Подключить робота';
     };
     statusCbs.push(render);
-    render("disconnected");
+    render(state());  // в оболочке робот может быть уже подключён
     if (btn) btn.onclick = async () => {
       if (connected()) { disconnect(); return; }
       try { await connect(); } catch (e) {
@@ -291,8 +378,15 @@ const Robert = (() => {
           hands, legs, combo, dance, eyes, setSpeed, say, stopSpeech, addRecording,
           playAudio: (src) => playRecorded(src, 1),
           onStatus: (cb) => statusCbs.push(cb),
-          FORWARD, BACKWARD, LEFT, RIGHT, COLORS, PHRASES};
+          FORWARD, BACKWARD, LEFT, RIGHT, COLORS, PHRASES,
+          // Для разделов внутри оболочки app.html: они делегируют связь сюда
+          _host: IS_SHELL ? {
+            state, connect, disconnect, writeRaw, bridgeInfo,
+            onStatus: (cb) => statusCbs.push(cb),
+            offStatus: (cb) => { const i = statusCbs.indexOf(cb); if (i >= 0) statusCbs.splice(i, 1); },
+          } : null};
 })();
+window.Robert = Robert;  // const не попадает в window, а разделам в рамке нужен parent.Robert
 
 /* ---------- Gemini прямо из браузера (каждый со своим ключом) ---------- */
 const Gemini = {

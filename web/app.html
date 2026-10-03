@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Робот Роберт</title>
+<link rel="icon" href="static/favicon.png">
+<link rel="apple-touch-icon" href="static/apple-touch-icon.png">
+<!--
+  Оболочка: держит Bluetooth-связь с роботом, а разделы (index, diagnostika, blockly, …)
+  открываются внутри рамки. В Chrome подключение принадлежит странице и рвётся при переходе
+  по ссылке, а рамка переходит сама по себе — связь остаётся. Какой раздел открыт, видно
+  в хэше: app.html#blockly.html#example-diag_clean. robert.js внутри рамки сам находит
+  эту страницу и делегирует ей связь (Robert._host).
+-->
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #f6f7fb; }
+  iframe { display: block; border: 0; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<iframe id="page" title="Раздел" allow="camera; microphone; autoplay; clipboard-write; fullscreen"></iframe>
+<script src="robert.js"></script>
+<script>
+  const frame = document.getElementById("page");
+  const PAGE = /^[\w-]+\.html(#.*)?$/;  // только свои страницы, без путей наружу
+
+  const wanted = () => {
+    const h = decodeURIComponent(location.hash.slice(1));
+    return PAGE.test(h) && !h.startsWith("app.html") ? h : "index.html";
+  };
+  const shown = () => {
+    try {
+      const l = frame.contentWindow.location;
+      return l.href === "about:blank" ? null : l.pathname.split("/").pop() + l.hash;
+    } catch { return null; }
+  };
+
+  // Хэш оболочки → раздел в рамке
+  const go = () => { if (shown() !== wanted()) frame.src = wanted(); };
+  window.addEventListener("hashchange", go);
+  go();
+
+  // Раздел в рамке → хэш и заголовок оболочки (ссылки внутри меню переводят саму рамку)
+  const sync = () => {
+    const s = shown();
+    if (s && s !== decodeURIComponent(location.hash.slice(1))) history.replaceState(null, "", "#" + s);
+    try {
+      const t = frame.contentDocument.title;
+      if (t && t !== document.title) document.title = t;
+    } catch {}
+  };
+  frame.addEventListener("load", sync);
+  setInterval(sync, 500);
+</script>
+</body>
+</html>
